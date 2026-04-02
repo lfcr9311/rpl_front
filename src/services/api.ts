@@ -10,10 +10,15 @@ import type {
 
 type TipoImpacto = "NENHUM" | "TEMPORARIA" | "PERMANENTE" | "AMBAS"
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+const API_URL = ""
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const url = `${API_URL}${path}`
+
+  console.log('API_URL', API_URL)
+  console.log('REQUEST URL', url)
+
+  const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json"
     },
