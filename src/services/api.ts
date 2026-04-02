@@ -10,7 +10,7 @@ import type {
 
 type TipoImpacto = "NENHUM" | "TEMPORARIA" | "PERMANENTE" | "AMBAS"
 
-const API_URL = ""
+const API_URL = import.meta.env.VITE_API_URL || "https://rpl-back.vercel.app"
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`
