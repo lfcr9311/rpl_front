@@ -87,8 +87,9 @@ select {
 .floating-sidebar-toggle {
   position: absolute;
   top: 16px;
-  left: 16px;
-  z-index: 1000;
+  right: 16px;
+  left: auto;
+  z-index: 1200;
   width: 44px;
   height: 44px;
   font-size: 20px;
@@ -110,7 +111,9 @@ select {
   width: 100%;
   height: 100%;
   min-width: 0;
+  min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .map-shell,
@@ -356,30 +359,6 @@ select {
   background: #162033 !important;
 }
 
-@media (max-width: 1100px) {
-  .app-layout.sidebar-open {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-
-  .sidebar {
-    max-height: 45vh;
-    border-right: 0;
-    border-bottom: 1px solid #1f2937;
-  }
-}
-
-.floating-sidebar-toggle {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  left: auto;
-  z-index: 1200;
-  width: 44px;
-  height: 44px;
-  font-size: 20px;
-}
-
 .content.with-route-panel .map-shell {
   width: 100%;
   height: 100%;
@@ -477,6 +456,22 @@ select {
   padding: 6px 10px;
   font-size: 12px;
   color: #e5e7eb;
+}
+
+.route-impact-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e5e7eb;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.route-impact-item.selected {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8 inset;
 }
 
 .notam-popup {
@@ -583,5 +578,347 @@ select {
   100% {
     transform: scale(0.94);
     opacity: 0.72;
+  }
+}
+
+/* NOTAM PANEL FLUTUANTE */
+
+.notam-floating-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2000;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(2, 6, 23, 0.92);
+  color: #e2e8f0;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.notam-floating-button:hover {
+  background: rgba(15, 23, 42, 0.96);
+}
+
+.notam-sidebar-shell {
+  position: absolute;
+  top: 68px;
+  right: 16px;
+  bottom: 16px;
+  width: 380px;
+  z-index: 1999;
+}
+
+.notam-sidebar-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  background: rgba(2, 6, 23, 0.96);
+  color: #fff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+}
+
+.notam-sidebar-header {
+  flex-shrink: 0;
+  padding: 16px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.9);
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.94));
+}
+
+.notam-sidebar-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notam-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.notam-sidebar-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.notam-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(15, 23, 42, 0.9);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.notam-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.notam-stat-card {
+  border-radius: 16px;
+  border: 1px solid rgba(30, 41, 59, 0.95);
+  background: rgba(15, 23, 42, 0.8);
+  padding: 10px 12px;
+}
+
+.notam-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.notam-stat-value {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #22d3ee;
+}
+
+.notam-search-box {
+  position: relative;
+  margin-top: 14px;
+}
+
+.notam-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.notam-search-input {
+  width: 100%;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  padding: 0 12px 0 38px;
+  outline: none;
+}
+
+.notam-search-input::placeholder {
+  color: #64748b;
+}
+
+.notam-filter-title {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.notam-filter-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.notam-filter-btn {
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(15, 23, 42, 0.85);
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notam-filter-btn.active {
+  border-color: rgba(34, 211, 238, 0.8);
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+
+.notam-sidebar-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notam-empty-state {
+  border-radius: 16px;
+  border: 1px dashed rgba(51, 65, 85, 0.9);
+  background: rgba(15, 23, 42, 0.5);
+  padding: 28px 16px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.notam-card {
+  border-radius: 18px;
+  border: 1px solid rgba(30, 41, 59, 0.95);
+  background: rgba(15, 23, 42, 0.82);
+  padding: 12px;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.notam-card:hover {
+  border-color: rgba(71, 85, 105, 0.95);
+  background: rgba(15, 23, 42, 0.96);
+}
+
+.notam-card.selected,
+.notam-card.active {
+  border-color: rgba(34, 211, 238, 0.9);
+  background: rgba(8, 47, 73, 0.45);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.18);
+}
+
+.notam-card.visto {
+  opacity: 0.6;
+}
+
+.notam-card-top,
+.notam-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.notam-checkbox {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.notam-card-main,
+.notam-card-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.notam-card-id {
+  font-size: 14px;
+  font-weight: 700;
+  color: #67e8f9;
+  word-break: break-word;
+}
+
+.notam-card-name {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #cbd5e1;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.notam-eye-btn,
+.visto-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(2, 6, 23, 0.8);
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.notam-eye-btn.seen,
+.visto-btn.active {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(20, 83, 45, 0.22);
+  filter: none;
+}
+
+.notam-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.notam-tag {
+  border-radius: 999px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  background: rgba(2, 6, 23, 0.75);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-transform: uppercase;
+}
+
+.notam-tag.highlight {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+
+@media (max-width: 1400px) {
+  .app-layout.sidebar-open {
+    grid-template-columns: 350px 1fr;
+  }
+
+  .notam-sidebar-shell {
+    width: 340px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .app-layout.sidebar-open {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .sidebar {
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid #1f2937;
+  }
+
+  .route-details-panel {
+    width: min(360px, 100%);
+  }
+
+  .notam-sidebar-shell {
+    top: 68px;
+    right: 12px;
+    bottom: 12px;
+    width: min(360px, calc(100vw - 24px));
   }
 }

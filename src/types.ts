@@ -31,10 +31,10 @@ export interface AreaNotamCsv {
   valid_from: string
   valid_to: string
   q_line: string
-  coords_latlon: LatLon[]
+  coords_latlon: [number, number][]
   texto_notam: string
   geometry_type?: "POLYGON" | "CIRCLE"
-  center?: LatLon | null
+  center?: [number, number] | null
   radius_m?: number | null
 }
 

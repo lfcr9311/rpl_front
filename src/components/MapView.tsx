@@ -346,37 +346,64 @@ function isCircleNotam(area: AreaTemporaria | AreaNotamCsv): area is AreaNotamCs
 
 function FitToSelectedArea({
   areaManual,
-  areaNotam
+  areaNotam,
+  areaFixa
 }: {
   areaManual?: AreaTemporaria | null
   areaNotam?: AreaNotamCsv | null
+  areaFixa?: AreaFixa | null
 }) {
   const map = useMap()
 
   useEffect(() => {
-    const area = areaNotam ?? areaManual
-    if (!area) return
+    if (areaNotam) {
+      if (
+        areaNotam.geometry_type === "CIRCLE" &&
+        areaNotam.center &&
+        areaNotam.radius_m
+      ) {
+        const centerLatLng = L.latLng(areaNotam.center[0], areaNotam.center[1])
+        const bounds = centerLatLng.toBounds(areaNotam.radius_m * 2)
 
-    if (isCircleNotam(area)) {
-      if (!area.center || !area.radius_m) return
-      const centerLatLng = L.latLng(area.center[0], area.center[1])
-      const bounds = centerLatLng.toBounds(area.radius_m * 2)
-      const timerCircle = window.setTimeout(() => {
-        map.fitBounds(bounds, { padding: [30, 30] })
-      }, 80)
+        const timer = window.setTimeout(() => {
+          map.fitBounds(bounds, { padding: [30, 30] })
+        }, 80)
 
-      return () => window.clearTimeout(timerCircle)
+        return () => window.clearTimeout(timer)
+      }
+
+      const coords = normalizeRing(areaNotam.coords_latlon)
+      if (coords.length >= 3) {
+        const timer = window.setTimeout(() => {
+          map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] })
+        }, 80)
+
+        return () => window.clearTimeout(timer)
+      }
     }
 
-    const coords = normalizeRing(area.coords_latlon)
-    if (coords.length < 3) return
+    if (areaManual) {
+      const coords = normalizeRing(areaManual.coords_latlon)
+      if (coords.length >= 3) {
+        const timer = window.setTimeout(() => {
+          map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] })
+        }, 80)
 
-    const timer = window.setTimeout(() => {
-      map.fitBounds(L.latLngBounds(coords), { padding: [30, 30] })
-    }, 80)
+        return () => window.clearTimeout(timer)
+      }
+    }
 
-    return () => window.clearTimeout(timer)
-  }, [map, areaManual, areaNotam])
+    if (areaFixa) {
+      const allPoints = areaFixa.coords_latlon.flatMap((anel) => normalizeRing(anel))
+      if (allPoints.length >= 3) {
+        const timer = window.setTimeout(() => {
+          map.fitBounds(L.latLngBounds(allPoints), { padding: [30, 30] })
+        }, 80)
+
+        return () => window.clearTimeout(timer)
+      }
+    }
+  }, [map, areaManual, areaNotam, areaFixa])
 
   return null
 }
@@ -849,11 +876,12 @@ export function MapView(props: Props) {
         <ResizeAwareMap />
         <MapClickHandler onClear={props.onLimparSelecoes} />
         <FitToSelectedArea
-          areaManual={selectedAreaManualSidebar}
+          areaManual={areaMapaManualSelecionada}
           areaNotam={areaMapaNotamSelecionada}
+          areaFixa={areaMapaFixaSelecionada}
         />
 
-        <LayersControl position="topright">
+        <LayersControl position="topleft">
           <LayersControl.BaseLayer checked name="Dark">
             <TileLayer
               attribution="&copy; OpenStreetMap contributors &copy; CARTO"
