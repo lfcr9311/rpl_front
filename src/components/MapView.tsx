@@ -485,8 +485,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-              .map((anel) => normalizeRing(anel))
-              .filter((anel) => anel.length >= 3)
+            .map((anel) => normalizeRing(anel))
+            .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -628,9 +628,9 @@ export function MapView(props: Props) {
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-        ]
+        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+      ]
       : [-15, -55]
 
   const rotasVisiveis = useMemo(() => {
@@ -1128,16 +1128,11 @@ export function MapView(props: Props) {
                         <div>
                           <div><strong>Nome:</strong> {area.nome}</div>
                           <div><strong>NOTAM:</strong> {area.numero_notam || "-"}</div>
-                          <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
                           <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                           <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
-                          <div
-                            dangerouslySetInnerHTML={{
-                              __html: formatarTextoNotam(area.texto_notam)
-                            }}
-                          />
                         </div>
                       </Popup>
+                      <Tooltip sticky>{area.nome}</Tooltip>
                       <Tooltip sticky>{area.nome}</Tooltip>
                     </Polygon>
                   )
