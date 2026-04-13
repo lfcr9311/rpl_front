@@ -92,6 +92,13 @@ function NotamSidebarComponent({
         }
 
         setMarcados(next)
+
+        if (Array.isArray(notams)) {
+          for (const notam of notams) {
+            const key = buildReadKey(notam)
+            notam.lido = next.has(key)
+          }
+        }
       } catch (error) {
         console.error("Erro ao carregar estados de leitura dos NOTAMs", error)
       }
@@ -102,7 +109,7 @@ function NotamSidebarComponent({
     return () => {
       ativo = false
     }
-  }, [])
+  }, [notams])
 
   const toggleMarcado = async (notam: AreaNotamCsv) => {
     const key = buildReadKey(notam)
@@ -122,6 +129,8 @@ function NotamSidebarComponent({
       return next
     })
 
+    notam.lido = novoValor
+
     try {
       await setNotamReadState({
         sourceId: notam.source_id,
@@ -140,6 +149,8 @@ function NotamSidebarComponent({
         else next.add(key)
         return next
       })
+
+      notam.lido = marcadoAtual
     } finally {
       setSalvando((current) => {
         const next = new Set(current)
