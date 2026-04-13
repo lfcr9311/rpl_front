@@ -31,19 +31,13 @@ select {
   font: inherit;
 }
 
-.app-layout {
+.app-shell {
   display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   background: #0b1020;
-}
-
-.app-layout.sidebar-open {
-  grid-template-columns: 420px 1fr;
-}
-
-.app-layout.sidebar-closed {
-  grid-template-columns: 1fr;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -51,6 +45,8 @@ select {
   background: #0f172a;
   padding: 16px;
   overflow-y: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .sidebar.hidden {
@@ -69,7 +65,7 @@ select {
 }
 
 .sidebar-toggle-btn,
-.floating-sidebar-toggle {
+.sidebar-floating-button {
   border: 1px solid #334155;
   background: #111827;
   color: #e5e7eb;
@@ -84,15 +80,15 @@ select {
   line-height: 1;
 }
 
-.floating-sidebar-toggle {
+.sidebar-floating-button {
   position: absolute;
   top: 16px;
-  right: 16px;
-  left: auto;
-  z-index: 1200;
+  left: 16px;
+  z-index: 2100;
   width: 44px;
   height: 44px;
   font-size: 20px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
 }
 
 .app-title {
@@ -114,10 +110,12 @@ select {
   min-height: 0;
   position: relative;
   overflow: hidden;
+  display: block;
 }
 
 .map-shell,
-.map {
+.map,
+.leaflet-container {
   width: 100%;
   height: 100%;
 }
@@ -315,6 +313,11 @@ select {
 
 .leaflet-container {
   background: #0b1020;
+  z-index: 1;
+}
+
+.leaflet-control-container {
+  z-index: 900;
 }
 
 .leaflet-control-layers {
@@ -581,8 +584,6 @@ select {
   }
 }
 
-/* NOTAM PANEL FLUTUANTE */
-
 .notam-floating-button {
   position: absolute;
   top: 16px;
@@ -615,8 +616,11 @@ select {
 }
 
 .notam-sidebar-panel {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 68px;
+  right: 16px;
+  bottom: 16px;
+  width: 380px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -627,6 +631,7 @@ select {
   color: #fff;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(12px);
+  z-index: 1999;
 }
 
 .notam-sidebar-header {
@@ -890,17 +895,17 @@ select {
 }
 
 @media (max-width: 1400px) {
-  .app-layout.sidebar-open {
-    grid-template-columns: 350px 1fr;
+  .app-shell {
+    grid-template-columns: 350px minmax(0, 1fr);
   }
 
-  .notam-sidebar-shell {
+  .notam-sidebar-panel {
     width: 340px;
   }
 }
 
 @media (max-width: 1100px) {
-  .app-layout.sidebar-open {
+  .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
   }
@@ -915,7 +920,7 @@ select {
     width: min(360px, 100%);
   }
 
-  .notam-sidebar-shell {
+  .notam-sidebar-panel {
     top: 68px;
     right: 12px;
     bottom: 12px;

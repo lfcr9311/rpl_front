@@ -10,13 +10,18 @@ import type {
 
 type TipoImpacto = "NENHUM" | "TEMPORARIA" | "PERMANENTE" | "AMBAS"
 
+export type NotamReadState = {
+  sourceId: string
+  numeroNotam: string
+  fir?: string | null
+  lido: boolean
+  updatedAt?: string
+}
+
 const API_URL = import.meta.env.VITE_API_URL || "https://rpl-back.vercel.app"
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`
-
-  console.log('API_URL', API_URL)
-  console.log('REQUEST URL', url)
 
   const response = await fetch(url, {
     headers: {
@@ -77,11 +82,11 @@ function extractCoordsFromText(text?: string | null): LatLon[] {
   return coords
 }
 
-function normalizeCoords(coords: any): LatLon[] {
+function normalizeCoords(coords: unknown): LatLon[] {
   if (!Array.isArray(coords)) return []
 
   const normalized = coords
-    .map((point: any) => {
+    .map((point) => {
       if (!Array.isArray(point) || point.length < 2) return null
 
       const lat = Number(point[0])
@@ -156,6 +161,8 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
     return null
   }
 
+  const sourceId = String(notam?.source_id ?? notam?.sourceId ?? notam?.id ?? "").trim()
+
   if (coordsFromPayload.length >= 3 || coordsFromText.length >= 3) {
     return {
       nome:
@@ -165,10 +172,12 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         notam?.id ??
         "NOTAM",
       numero_notam:
-        notam?.numero_notam ??
-        notam?.number ??
-        notam?.n ??
-        "",
+        String(
+          notam?.numero_notam ??
+          notam?.number ??
+          notam?.n ??
+          ""
+        ).trim().toUpperCase(),
       fir_match:
         notam?.fir_match ??
         notam?.fir ??
@@ -203,7 +212,9 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         "",
       geometry_type: "POLYGON",
       center: null,
-      radius_m: null
+      radius_m: null,
+      source_id: sourceId,
+      lido: Boolean(notam?.lido)
     }
   }
 
@@ -217,10 +228,12 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         notam?.id ??
         "NOTAM",
       numero_notam:
-        notam?.numero_notam ??
-        notam?.number ??
-        notam?.n ??
-        "",
+        String(
+          notam?.numero_notam ??
+          notam?.number ??
+          notam?.n ??
+          ""
+        ).trim().toUpperCase(),
       fir_match:
         notam?.fir_match ??
         notam?.fir ??
@@ -254,7 +267,9 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         "",
       geometry_type: "CIRCLE",
       center: parsedCircle.center,
-      radius_m: parsedCircle.radius_m
+      radius_m: parsedCircle.radius_m,
+      source_id: sourceId,
+      lido: Boolean(notam?.lido)
     }
   }
 
@@ -517,14 +532,12 @@ function lineIntersectsCircle(route: LatLon[], center: LatLon, radius_m: number)
 
 function analyzeRoutesWithAreas(
   rotas: RotaAnalisada[],
-  areasTemporarias: AreaNotamCsv[]
+  areas: AreaNotamCsv[]
 ): RotaAnalisada[] {
   return rotas.map((rota) => {
-    const impactosTemporarias = areasTemporarias.filter((area) => {
-      const rotaCoords = Array.isArray(rota.coords_latlon)
-        ? rota.coords_latlon
-        : []
+    const rotaCoords = Array.isArray(rota.coords_latlon) ? rota.coords_latlon : []
 
+    const impactosTemporarias = areas.filter((area) => {
       if (rotaCoords.length < 2) return false
 
       if (
@@ -615,8 +628,8 @@ function toBootstrapResponse(
   }
 }
 
-async function loadNotams(): Promise<any> {
-  return request<any>("/api/notams/firs")
+async function loadNotams(includeRead = true): Promise<any> {
+  return request<any>(`/api/notams/areas?includeRead=${includeRead ? "true" : "false"}`)
 }
 
 async function loadAeroviasAlta(): Promise<any[]> {
@@ -643,9 +656,9 @@ async function loadRpl(): Promise<any[]> {
   return Array.isArray(data) ? data : []
 }
 
-export async function getBootstrap(): Promise<BootstrapResponse> {
+export async function getBootstrap(includeRead = true): Promise<BootstrapResponse> {
   const [notams, aeroviasAlta, aeroviasBaixa, aeroviasUruguay, aeroportos, rotasRpl] = await Promise.all([
-    loadNotams(),
+    loadNotams(includeRead),
     loadAeroviasAlta(),
     loadAeroviasBaixa(),
     loadAeroviasUruguay(),
@@ -667,72 +680,63 @@ export async function getApiRoot(): Promise<any> {
   return request("/api")
 }
 
-export async function getNotams(): Promise<any> {
-  return loadNotams()
+export async function getNotams(includeRead = true): Promise<any> {
+  return loadNotams(includeRead)
 }
 
 export async function getNotamsHealth(): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>("/api/notams/health")
 }
 
-export async function refreshNotams(): Promise<{ total: number }> {
-  return request<{ total: number }>("/api/notams/refresh", {
-    method: "POST"
+export async function getNotamReadStates(fir?: string): Promise<NotamReadState[]> {
+  const qs = fir ? `?fir=${encodeURIComponent(fir)}` : ""
+  return request<NotamReadState[]>(`/api/notams/read-state${qs}`)
+}
+
+export async function setNotamReadState(payload: {
+  sourceId: string
+  numeroNotam: string
+  fir?: string
+  lido: boolean
+}): Promise<NotamReadState> {
+  return request<NotamReadState>("/api/notams/read-state", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
   })
 }
 
-export async function addAreaTemporaria(_: {
-  nome: string
-  coords_latlon: LatLon[]
-}): Promise<BootstrapResponse> {
-  throw new Error("O backend atual não possui /api/areas-temporarias")
+export function formatarHora(value?: string | null): string {
+  const v = String(value ?? "").trim()
+  if (!/^\d{4}$/.test(v)) return v || "-"
+  return `${v.slice(0, 2)}:${v.slice(2, 4)}`
 }
 
-export async function removeAreaTemporaria(_: string): Promise<BootstrapResponse> {
-  throw new Error("O backend atual não possui /api/areas-temporarias/:nome")
+export function buildAreaLabel(area: AreaTemporaria): string {
+  return `${area.nome} (${area.coords_latlon.length} pts)`
 }
 
-export async function clearAreasTemporarias(): Promise<BootstrapResponse> {
-  throw new Error("O backend atual não possui /api/areas-temporarias")
-}
+export function parseCoordsInput(input: string): LatLon[] {
+  const matches = String(input ?? "")
+    .match(/\d{6}(?:\.\d+)?[NS]\/?\d{7}(?:\.\d+)?[EW]/gi)
 
-export function formatarHora(hora?: string): string {
-  if (!hora || !/^\d{4}$/.test(hora)) return "-"
-  return `${hora.slice(0, 2)}:${hora.slice(2)}`
-}
-
-export function parseCoordsInput(texto: string): LatLon[] {
-  const normalizado = texto.trim()
-
-  if (!normalizado) {
-    throw new Error("Informe as coordenadas")
+  if (!matches || matches.length < 3) {
+    throw new Error("Coordenadas inválidas. Use ao menos 3 pontos no formato 253231.67S/0542325.98W")
   }
 
-  const tokens = normalizado.split(/[\s,;\n\t]+/).filter(Boolean)
+  const coords = matches
+    .map(parseCompactToken)
+    .filter(Boolean) as LatLon[]
 
-  if (tokens.length >= 3) {
-    const compactas = tokens.map(parseCompactToken).filter(Boolean) as LatLon[]
-    if (compactas.length === tokens.length) return compactas
+  if (coords.length < 3) {
+    throw new Error("Coordenadas inválidas")
   }
 
-  const linhas = normalizado
-    .split("\n")
-    .map((linha) => linha.trim())
-    .filter(Boolean)
+  const first = coords[0]
+  const last = coords[coords.length - 1]
 
-  const decimais = linhas
-    .map((linha) => linha.split(",").map((p) => p.trim()))
-    .filter((partes) => partes.length === 2)
-    .map((partes) => [Number(partes[0]), Number(partes[1])] as LatLon)
-    .filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon))
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    coords.push(first)
+  }
 
-  if (decimais.length >= 3) return decimais
-
-  throw new Error(
-    "Coordenadas inválidas. Use 253231.67S/0542325.98W ou linhas no formato -25.53935,-54.39055"
-  )
-}
-
-export function buildAreaLabel(area: AreaTemporaria) {
-  return `${area.nome} | ${area.coords_latlon.length} pontos`
+  return coords
 }

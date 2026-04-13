@@ -33,9 +33,11 @@ export interface AreaNotamCsv {
   q_line: string
   coords_latlon: [number, number][]
   texto_notam: string
-  geometry_type?: "POLYGON" | "CIRCLE"
+  source_id: string
+  geometry_type?: 'POLYGON' | 'CIRCLE'
   center?: [number, number] | null
   radius_m?: number | null
+  lido?: boolean
 }
 
 export interface AreaTemporaria {

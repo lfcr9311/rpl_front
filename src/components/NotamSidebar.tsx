@@ -1,7 +1,8 @@
-import { memo, useMemo, useState } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import type { AreaNotamCsv } from "../types"
 import type { AreaMapaSelecionada } from "../App"
-import { Eye, EyeOff, Filter, Search, X, BellRing } from "lucide-react"
+import { Filter, Search, X, BellRing } from "lucide-react"
+import { getNotamReadStates, setNotamReadState } from "../services/api"
 
 type FilterType = "TODOS" | "VISTO" | "NAO_VISTO"
 
@@ -10,61 +11,157 @@ type Props = {
   areaMapaSelecionada: AreaMapaSelecionada
   onSelectNotam: (area: AreaNotamCsv) => void
   onClose: () => void
+  onReadStateChanged: () => void
 }
 
 function normalizarTexto(valor: unknown) {
   return String(valor ?? "").trim().toUpperCase()
 }
 
+function normalizarValor(valor: unknown) {
+  return String(valor ?? "").trim()
+}
+
+function buildReadKey(area: AreaNotamCsv) {
+  const sourceId = normalizarValor(area.source_id)
+  const numeroNotam = normalizarTexto(area.numero_notam)
+  const fir = normalizarTexto(area.fir_match)
+
+  if (sourceId) {
+    return `SRC::${sourceId}`
+  }
+
+  return `ALT::${numeroNotam}::${fir}`
+}
+
+function buildReadKeyFromState(item: {
+  sourceId?: string | null
+  numeroNotam?: string | null
+  fir?: string | null
+}) {
+  const sourceId = normalizarValor(item.sourceId)
+  const numeroNotam = normalizarTexto(item.numeroNotam)
+  const fir = normalizarTexto(item.fir)
+
+  if (sourceId) {
+    return `SRC::${sourceId}`
+  }
+
+  return `ALT::${numeroNotam}::${fir}`
+}
+
 function areaNotamKeySidebar(area: AreaNotamCsv) {
-  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}`
+  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}|${area.source_id || ""}`
+}
+
+function isMarcadoNotam(area: AreaNotamCsv, marcados: Set<string>) {
+  if (area.lido) return true
+  return marcados.has(buildReadKey(area))
 }
 
 function NotamSidebarComponent({
   notams,
   areaMapaSelecionada,
   onSelectNotam,
-  onClose
+  onClose,
+  onReadStateChanged
 }: Props) {
   const [filtro, setFiltro] = useState<FilterType>("TODOS")
   const [busca, setBusca] = useState("")
-  const [vistos, setVistos] = useState<Set<string>>(new Set())
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [marcados, setMarcados] = useState<Set<string>>(new Set())
+  const [salvando, setSalvando] = useState<Set<string>>(new Set())
 
   const listaBase = useMemo(() => {
     return Array.isArray(notams) ? notams : []
   }, [notams])
 
-  const toggleVisto = (id: string) => {
-    setVistos((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  useEffect(() => {
+    let ativo = true
 
-  const toggleSelect = (id: string) => {
-    setSelecionados((current) => {
+    async function carregarEstados() {
+      try {
+        const estados = await getNotamReadStates()
+        if (!ativo) return
+
+        const next = new Set<string>()
+
+        for (const item of estados) {
+          if (item.lido) {
+            next.add(buildReadKeyFromState(item))
+          }
+        }
+
+        setMarcados(next)
+      } catch (error) {
+        console.error("Erro ao carregar estados de leitura dos NOTAMs", error)
+      }
+    }
+
+    void carregarEstados()
+
+    return () => {
+      ativo = false
+    }
+  }, [])
+
+  const toggleMarcado = async (notam: AreaNotamCsv) => {
+    const key = buildReadKey(notam)
+    const marcadoAtual = isMarcadoNotam(notam, marcados)
+    const novoValor = !marcadoAtual
+
+    setSalvando((current) => {
       const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      next.add(key)
       return next
     })
+
+    setMarcados((current) => {
+      const next = new Set(current)
+      if (novoValor) next.add(key)
+      else next.delete(key)
+      return next
+    })
+
+    try {
+      await setNotamReadState({
+        sourceId: notam.source_id,
+        numeroNotam: notam.numero_notam,
+        fir: notam.fir_match,
+        lido: novoValor
+      })
+
+      onReadStateChanged()
+    } catch (error) {
+      console.error("Erro ao salvar leitura do NOTAM", error)
+
+      setMarcados((current) => {
+        const next = new Set(current)
+        if (novoValor) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    } finally {
+      setSalvando((current) => {
+        const next = new Set(current)
+        next.delete(key)
+        return next
+      })
+    }
   }
 
   const listaFiltrada = useMemo(() => {
     const textoBusca = normalizarTexto(busca)
 
     return listaBase.filter((notam) => {
-      const id = String(notam.numero_notam || notam.nome || "").trim()
+      const id = normalizarValor(notam.numero_notam || notam.nome || "")
       const idNormalizado = normalizarTexto(id)
       const nomeNormalizado = normalizarTexto(notam.nome)
       const firNormalizado = normalizarTexto(notam.fir_match)
       const tipoNormalizado = normalizarTexto(notam.area_type)
+      const marcado = isMarcadoNotam(notam, marcados)
 
-      if (filtro === "VISTO" && !vistos.has(id)) return false
-      if (filtro === "NAO_VISTO" && vistos.has(id)) return false
+      if (filtro === "VISTO" && !marcado) return false
+      if (filtro === "NAO_VISTO" && marcado) return false
 
       if (!textoBusca) return true
 
@@ -75,7 +172,23 @@ function NotamSidebarComponent({
         tipoNormalizado.includes(textoBusca)
       )
     })
-  }, [listaBase, filtro, vistos, busca])
+  }, [listaBase, filtro, marcados, busca])
+
+  const stats = useMemo(() => {
+    let vistos = 0
+    let naoVistos = 0
+
+    for (const notam of listaBase) {
+      if (isMarcadoNotam(notam, marcados)) vistos += 1
+      else naoVistos += 1
+    }
+
+    return {
+      total: listaBase.length,
+      vistos,
+      naoVistos
+    }
+  }, [listaBase, marcados])
 
   return (
     <aside className="notam-sidebar-panel">
@@ -87,7 +200,7 @@ function NotamSidebarComponent({
               <span>NOTAMs</span>
             </div>
             <div className="notam-sidebar-subtitle">
-              {listaFiltrada.length} exibidos de {listaBase.length}
+              {listaFiltrada.length} exibidos de {stats.total}
             </div>
           </div>
 
@@ -104,12 +217,12 @@ function NotamSidebarComponent({
         <div className="notam-stats">
           <div className="notam-stat-card">
             <div className="notam-stat-label">Vistos</div>
-            <div className="notam-stat-value">{vistos.size}</div>
+            <div className="notam-stat-value">{stats.vistos}</div>
           </div>
 
           <div className="notam-stat-card">
-            <div className="notam-stat-label">Marcados</div>
-            <div className="notam-stat-value">{selecionados.size}</div>
+            <div className="notam-stat-label">Não vistos</div>
+            <div className="notam-stat-value">{stats.naoVistos}</div>
           </div>
         </div>
 
@@ -153,29 +266,30 @@ function NotamSidebarComponent({
           </div>
         ) : (
           listaFiltrada.map((notam, index) => {
-            const id = String(notam.numero_notam || notam.nome || `NOTAM-${index}`).trim()
+            const id = normalizarValor(notam.numero_notam || notam.nome || `NOTAM-${index}`)
             const chaveNotam = areaNotamKeySidebar(notam)
 
             const isSelected =
               areaMapaSelecionada?.tipo === "NOTAM" &&
               normalizarTexto(areaMapaSelecionada?.chave) === normalizarTexto(chaveNotam)
 
-            const isVisto = vistos.has(id)
-            const isMarcado = selecionados.has(id)
+            const isMarcado = isMarcadoNotam(notam, marcados)
+            const isSaving = salvando.has(buildReadKey(notam))
 
             return (
               <div
                 key={`${chaveNotam}-${index}`}
-                className={`notam-card ${isSelected ? "selected active" : ""} ${isVisto ? "visto" : ""}`}
+                className={`notam-card ${isSelected ? "selected active" : ""} ${isMarcado ? "visto" : ""}`}
                 onClick={() => onSelectNotam(notam)}
               >
                 <div className="notam-card-top">
                   <input
                     type="checkbox"
                     checked={isMarcado}
+                    disabled={isSaving}
                     onChange={(e) => {
                       e.stopPropagation()
-                      toggleSelect(id)
+                      void toggleMarcado(notam)
                     }}
                     className="notam-checkbox"
                   />
@@ -184,18 +298,6 @@ function NotamSidebarComponent({
                     <div className="notam-card-id">{id}</div>
                     <div className="notam-card-name">{notam.nome || "-"}</div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleVisto(id)
-                    }}
-                    className={`notam-eye-btn ${isVisto ? "seen" : ""}`}
-                    title={isVisto ? "Marcar como não visto" : "Marcar como visto"}
-                  >
-                    {isVisto ? <Eye size={15} /> : <EyeOff size={15} />}
-                  </button>
                 </div>
 
                 <div className="notam-tags">
@@ -206,6 +308,7 @@ function NotamSidebarComponent({
                       {Math.round((notam.radius_m ?? 0) / 1852)} NM
                     </span>
                   ) : null}
+                  {isSaving ? <span className="notam-tag">SALVANDO</span> : null}
                 </div>
               </div>
             )

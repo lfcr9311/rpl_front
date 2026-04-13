@@ -64,6 +64,7 @@ const COR_AREA_PROHIBITED = "#ef4444"
 const COR_AREA_DANGER = "#a855f7"
 const COR_AREA_DEFAULT = "#94a3b8"
 const COR_TEMPORARIA = "#ffd60a"
+const COR_TEMPORARIA_LIDA = "#16a34a"
 const COR_TEMPORARIA_SELECIONADA = "#00ffff"
 const COR_AREA_DESTACADA = "#fde047"
 const COR_AEROVIA_HOVER = "#ffffff"
@@ -135,16 +136,12 @@ function rotaKey(rota: RotaAnalisada) {
   return `${rota.ident}|${rota.origem}|${rota.destino}|${rota.rota_texto}|${rota.eobt}|${rota.eta}`
 }
 
-function areaTemporariaKey(area: AreaTemporaria | AreaNotamCsv) {
-  return area.nome
-}
-
 function areaFixaKey(area: AreaFixa) {
   return `FIXA|${area.nome}|${area.area_type}|${area.fir_match}`
 }
 
 function areaNotamKey(area: AreaNotamCsv) {
-  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}`
+  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}|${area.source_id || ""}`
 }
 
 function areaManualKey(area: AreaTemporaria) {
@@ -331,14 +328,17 @@ function formatarTextoNotam(texto: string) {
   return escapeHtml(texto || "-").replace(/\n/g, "<br>")
 }
 
-function isCircleNotam(area: AreaTemporaria | AreaNotamCsv): area is AreaNotamCsv {
+function hasCircleGeometry(area: AreaNotamCsv): area is AreaNotamCsv & {
+  geometry_type: "CIRCLE"
+  center: LatLon
+  radius_m: number
+} {
   return (
-    "geometry_type" in area &&
     area.geometry_type === "CIRCLE" &&
     Array.isArray(area.center) &&
     area.center.length >= 2 &&
-    typeof area.center[0] === "number" &&
-    typeof area.center[1] === "number" &&
+    Number.isFinite(area.center[0]) &&
+    Number.isFinite(area.center[1]) &&
     typeof area.radius_m === "number" &&
     Number.isFinite(area.radius_m)
   )
@@ -357,11 +357,7 @@ function FitToSelectedArea({
 
   useEffect(() => {
     if (areaNotam) {
-      if (
-        areaNotam.geometry_type === "CIRCLE" &&
-        areaNotam.center &&
-        areaNotam.radius_m
-      ) {
+      if (hasCircleGeometry(areaNotam)) {
         const centerLatLng = L.latLng(areaNotam.center[0], areaNotam.center[1])
         const bounds = centerLatLng.toBounds(areaNotam.radius_m * 2)
 
@@ -466,16 +462,12 @@ export function MapView(props: Props) {
   const [aeroviaUruguayHover, setAeroviaUruguayHover] = useState<string | null>(null)
 
   const selectedAreaManualSidebar =
-    props.areasTemporarias.find((a) => a.nome === props.areaSelecionada) || null
+    props.areasTemporarias.find((a) => a.nome === props.areaSelecionada) ?? null
 
   const areasNotamNormalizadas = useMemo(() => {
     return props.areasNotamCsv.filter((area) => {
-      if (area.geometry_type === "CIRCLE" && area.center && area.radius_m) {
-        return true
-      }
-
-      const coords = normalizeRing(area.coords_latlon)
-      return coords.length >= 3
+      if (hasCircleGeometry(area)) return true
+      return normalizeRing(area.coords_latlon).length >= 3
     })
   }, [props.areasNotamCsv])
 
@@ -485,8 +477,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-            .map((anel) => normalizeRing(anel))
-            .filter((anel) => anel.length >= 3)
+              .map((anel) => normalizeRing(anel))
+              .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -517,9 +509,12 @@ export function MapView(props: Props) {
   const rotaSelecionadaNormalizada = useMemo(() => {
     if (!props.rotaSelecionada) return null
 
+    const coords = normalizeLine(props.rotaSelecionada.coords_latlon)
+    if (coords.length < 2) return null
+
     return {
       ...props.rotaSelecionada,
-      coords_latlon: normalizeLine(props.rotaSelecionada.coords_latlon)
+      coords_latlon: coords
     }
   }, [props.rotaSelecionada])
 
@@ -527,21 +522,11 @@ export function MapView(props: Props) {
     ? rotaKey(rotaSelecionadaNormalizada)
     : null
 
-  const rotaSelecionadaVisivel = useMemo(() => {
-    if (!rotaSelecionadaNormalizada) return null
-
-    const encontrada = rotasFiltradasPorImpacto.find(
-      (rota) => rotaKey(rota) === rotaKey(rotaSelecionadaNormalizada)
-    )
-
-    return encontrada ?? null
-  }, [rotaSelecionadaNormalizada, rotasFiltradasPorImpacto])
-
   const areaMapaNotamSelecionada = useMemo(() => {
     if (!props.areaMapaSelecionada || props.areaMapaSelecionada.tipo !== "NOTAM") return null
 
     return (
-      areasNotamNormalizadas.find((area) => areaNotamKey(area) === props.areaMapaSelecionada?.chave) ||
+      areasNotamNormalizadas.find((area) => areaNotamKey(area) === props.areaMapaSelecionada?.chave) ??
       null
     )
   }, [areasNotamNormalizadas, props.areaMapaSelecionada])
@@ -550,7 +535,7 @@ export function MapView(props: Props) {
     if (!props.areaMapaSelecionada || props.areaMapaSelecionada.tipo !== "MANUAL") return null
 
     return (
-      areasTemporariasNormalizadas.find((area) => areaManualKey(area) === props.areaMapaSelecionada?.chave) ||
+      areasTemporariasNormalizadas.find((area) => areaManualKey(area) === props.areaMapaSelecionada?.chave) ??
       null
     )
   }, [areasTemporariasNormalizadas, props.areaMapaSelecionada])
@@ -559,126 +544,74 @@ export function MapView(props: Props) {
     if (!props.areaMapaSelecionada || props.areaMapaSelecionada.tipo !== "FIXA") return null
 
     return (
-      areasFixasNormalizadas.find((area) => areaFixaKey(area) === props.areaMapaSelecionada?.chave) ||
+      areasFixasNormalizadas.find((area) => areaFixaKey(area) === props.areaMapaSelecionada?.chave) ??
       null
     )
   }, [areasFixasNormalizadas, props.areaMapaSelecionada])
 
-  const areaMapaSelecionadaAtiva =
-    areaMapaNotamSelecionada || areaMapaManualSelecionada || areaMapaFixaSelecionada
-
-  const rotasImpactadasPelaAreaSelecionada = useMemo(() => {
-    if (!areaMapaSelecionadaAtiva) return []
-
+  function calcularRotasAfetadas(area: NonNullable<AreaMapaSelecionada>): RotaAnalisada[] {
     return rotasFiltradasPorImpacto.filter((rota) => {
-      if (areaMapaSelecionadaAtiva === areaMapaManualSelecionada) {
-        return lineIntersectsPolygon(rota.coords_latlon, areaMapaManualSelecionada.coords_latlon)
+      if (area.tipo === "MANUAL") {
+        const encontrada = areasTemporariasNormalizadas.find(
+          (item) => areaManualKey(item) === area.chave
+        )
+        if (!encontrada) return false
+        return lineIntersectsPolygon(rota.coords_latlon, encontrada.coords_latlon)
       }
 
-      if (areaMapaSelecionadaAtiva === areaMapaNotamSelecionada) {
-        if (
-          areaMapaNotamSelecionada.geometry_type === "CIRCLE" &&
-          areaMapaNotamSelecionada.center &&
-          areaMapaNotamSelecionada.radius_m
-        ) {
+      if (area.tipo === "NOTAM") {
+        const encontrada = areasNotamNormalizadas.find(
+          (item) => areaNotamKey(item) === area.chave
+        )
+        if (!encontrada) return false
+
+        if (hasCircleGeometry(encontrada)) {
           return lineIntersectsCircle(
             rota.coords_latlon,
-            areaMapaNotamSelecionada.center,
-            areaMapaNotamSelecionada.radius_m
+            encontrada.center,
+            encontrada.radius_m
           )
         }
 
-        return lineIntersectsPolygon(rota.coords_latlon, areaMapaNotamSelecionada.coords_latlon)
+        return lineIntersectsPolygon(rota.coords_latlon, encontrada.coords_latlon)
       }
 
-      if (areaMapaSelecionadaAtiva === areaMapaFixaSelecionada) {
-        return areaMapaFixaSelecionada.coords_latlon.some((anel) =>
+      if (area.tipo === "FIXA") {
+        const encontrada = areasFixasNormalizadas.find(
+          (item) => areaFixaKey(item) === area.chave
+        )
+        if (!encontrada) return false
+
+        return encontrada.coords_latlon.some((anel) =>
           lineIntersectsPolygon(rota.coords_latlon, anel)
         )
       }
 
       return false
     })
-  }, [
-    areaMapaSelecionadaAtiva,
-    areaMapaManualSelecionada,
-    areaMapaNotamSelecionada,
-    areaMapaFixaSelecionada,
-    rotasFiltradasPorImpacto
-  ])
+  }
 
   const chavesRotasImpactadasPelaArea = useMemo(() => {
-    return new Set(rotasImpactadasPelaAreaSelecionada.map((rota) => rotaKey(rota)))
-  }, [rotasImpactadasPelaAreaSelecionada])
+    if (!props.areaMapaSelecionada) return new Set<string>()
 
-  const nomesAreasFixasSelecionadas = useMemo(() => {
     return new Set(
-      (rotaSelecionadaVisivel?.impactos_fixas ?? []).map((a: any) => a.nome)
+      calcularRotasAfetadas(props.areaMapaSelecionada).map((rota) => rotaKey(rota))
     )
-  }, [rotaSelecionadaVisivel])
-
-  const nomesAreasTemporariasSelecionadas = useMemo(() => {
-    return new Set(
-      (rotaSelecionadaVisivel?.impactos_temporarias ?? []).map((a: any) =>
-        typeof a === "string" ? a : a?.nome
-      )
-    )
-  }, [rotaSelecionadaVisivel])
+  }, [
+    props.areaMapaSelecionada,
+    rotasFiltradasPorImpacto,
+    areasNotamNormalizadas,
+    areasTemporariasNormalizadas,
+    areasFixasNormalizadas
+  ])
 
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-      ]
+          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+        ]
       : [-15, -55]
-
-  const rotasVisiveis = useMemo(() => {
-    if (rotaSelecionadaVisivel) {
-      return [rotaSelecionadaVisivel]
-    }
-
-    if (areaMapaSelecionadaAtiva) {
-      return rotasImpactadasPelaAreaSelecionada
-    }
-
-    return rotasFiltradasPorImpacto
-  }, [
-    rotaSelecionadaVisivel,
-    areaMapaSelecionadaAtiva,
-    rotasImpactadasPelaAreaSelecionada,
-    rotasFiltradasPorImpacto
-  ])
-
-  const areasFixasVisiveis = useMemo(() => {
-    if (!rotaSelecionadaVisivel) {
-      return areasFixasNormalizadas
-    }
-
-    return areasFixasNormalizadas.filter((area) =>
-      nomesAreasFixasSelecionadas.has(area.nome)
-    )
-  }, [rotaSelecionadaVisivel, areasFixasNormalizadas, nomesAreasFixasSelecionadas])
-
-  const areasNotamVisiveis = useMemo(() => {
-    if (!rotaSelecionadaVisivel) {
-      return areasNotamNormalizadas
-    }
-
-    return areasNotamNormalizadas.filter((area) =>
-      nomesAreasTemporariasSelecionadas.has(areaTemporariaKey(area))
-    )
-  }, [rotaSelecionadaVisivel, areasNotamNormalizadas, nomesAreasTemporariasSelecionadas])
-
-  const areasTemporariasVisiveis = useMemo(() => {
-    if (!rotaSelecionadaVisivel) {
-      return areasTemporariasNormalizadas
-    }
-
-    return areasTemporariasNormalizadas.filter((area) =>
-      nomesAreasTemporariasSelecionadas.has(areaTemporariaKey(area))
-    )
-  }, [rotaSelecionadaVisivel, areasTemporariasNormalizadas, nomesAreasTemporariasSelecionadas])
 
   const aeroviasAltaNormalizadas = useMemo(() => {
     return props.aeroviasAlta
@@ -707,408 +640,283 @@ export function MapView(props: Props) {
       .filter((a) => a.coords_latlon.length >= 2)
   }, [props.aeroviasUruguay])
 
-  function calcularRotasAfetadas(area: NonNullable<AreaMapaSelecionada>): RotaAnalisada[] {
-    return rotasFiltradasPorImpacto.filter((rota) => {
-      if (area.tipo === "MANUAL") {
-        const encontrada = areasTemporariasNormalizadas.find(
-          (item) => areaManualKey(item) === area.chave
-        )
-        if (!encontrada) return false
-        return lineIntersectsPolygon(rota.coords_latlon, encontrada.coords_latlon)
-      }
-
-      if (area.tipo === "NOTAM") {
-        const encontrada = areasNotamNormalizadas.find(
-          (item) => areaNotamKey(item) === area.chave
-        )
-        if (!encontrada) return false
-
-        if (
-          encontrada.geometry_type === "CIRCLE" &&
-          encontrada.center &&
-          encontrada.radius_m
-        ) {
-          return lineIntersectsCircle(
-            rota.coords_latlon,
-            encontrada.center,
-            encontrada.radius_m
-          )
-        }
-
-        return lineIntersectsPolygon(rota.coords_latlon, encontrada.coords_latlon)
-      }
-
-      if (area.tipo === "FIXA") {
-        const encontrada = areasFixasNormalizadas.find(
-          (item) => areaFixaKey(item) === area.chave
-        )
-        if (!encontrada) return false
-
-        return encontrada.coords_latlon.some((anel) =>
-          lineIntersectsPolygon(rota.coords_latlon, anel)
-        )
-      }
-
-      return false
-    })
-  }
-
-  function estiloRota(rota: RotaAnalisada) {
-    const selecionada =
-      rotaSelecionadaKeyAtual !== null && rotaSelecionadaKeyAtual === rotaKey(rota)
-
-    if (selecionada) {
-      return {
-        color: COR_ROTA_SELECIONADA,
-        weight: 3.5,
-        opacity: 1
-      }
-    }
-
-    if (areaMapaSelecionadaAtiva) {
-      const impactadaPorArea = chavesRotasImpactadasPelaArea.has(rotaKey(rota))
-
-      if (impactadaPorArea) {
-        return {
-          color: COR_ROTA_IMPACTADA,
-          weight: 3,
-          opacity: 0.95
-        }
-      }
-
-      return {
-        color: COR_ROTA_BASE,
-        weight: 1,
-        opacity: 0.05
-      }
-    }
-
-    if (rota.impactada) {
-      return {
-        color: COR_ROTA_IMPACTADA,
-        weight: 2,
-        opacity: 0.85
-      }
-    }
-
-    return {
-      color: COR_ROTA_BASE,
-      weight: 1.4,
-      opacity: 0.45
-    }
-  }
-
-  function estiloAeroviaAlta(nome: string) {
-    const hovered = aeroviaAltaHover === nome
-
-    if (hovered) {
-      return {
-        color: COR_AEROVIA_HOVER,
-        weight: 4,
-        opacity: 0.95
-      }
-    }
-
-    return {
-      color: COR_AEROVIA_ALTA,
-      weight: 1.2,
-      opacity: 0.22
-    }
-  }
-
-  function estiloAeroviaBaixa(nome: string) {
-    const hovered = aeroviaBaixaHover === nome
-
-    if (hovered) {
-      return {
-        color: COR_AEROVIA_HOVER,
-        weight: 4,
-        opacity: 0.95
-      }
-    }
-
-    return {
-      color: COR_AEROVIA_BAIXA,
-      weight: 1.2,
-      opacity: 0.22
-    }
-  }
-
-  function estiloAeroviaUruguay(nome: string) {
-    const hovered = aeroviaUruguayHover === nome
-
-    if (hovered) {
-      return {
-        color: COR_AEROVIA_HOVER,
-        weight: 4,
-        opacity: 0.95
-      }
-    }
-
-    return {
-      color: COR_AEROVIA_URUGUAY,
-      weight: 1.6,
-      opacity: 0.65
-    }
-  }
-
-  useEffect(() => {
-    if (!props.rotaSelecionada) return
-
-    const aindaExiste = rotasFiltradasPorImpacto.some(
-      (rota) => rotaKey(rota) === rotaKey(props.rotaSelecionada as RotaAnalisada)
-    )
-
-    if (!aindaExiste) {
-      props.onSelecionarRota(null)
-    }
-  }, [props.rotaSelecionada, rotasFiltradasPorImpacto, props.onSelecionarRota])
-
   return (
-    <div className="map-shell" style={{ width: "100%", height: "100%", minHeight: 0 }}>
-      <MapContainer
-        center={center}
-        zoom={5}
-        className="map"
-        style={{ width: "100%", height: "100%" }}
-        preferCanvas
-      >
-        <ResizeAwareMap />
-        <MapClickHandler onClear={props.onLimparSelecoes} />
-        <FitToSelectedArea
-          areaManual={areaMapaManualSelecionada}
-          areaNotam={areaMapaNotamSelecionada}
-          areaFixa={areaMapaFixaSelecionada}
-        />
+    <MapContainer
+      center={center}
+      zoom={5}
+      style={{ width: "100%", height: "100%" }}
+      preferCanvas
+    >
+      <ResizeAwareMap />
+      <MapClickHandler onClear={props.onLimparSelecoes} />
+      <FitToSelectedArea
+        areaManual={areaMapaManualSelecionada ?? selectedAreaManualSidebar}
+        areaNotam={areaMapaNotamSelecionada}
+        areaFixa={areaMapaFixaSelecionada}
+      />
 
-        <LayersControl position="topleft">
-          <LayersControl.BaseLayer checked name="Dark">
-            <TileLayer
-              attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            />
-          </LayersControl.BaseLayer>
+      <LayersControl position="topleft">
+        <LayersControl.BaseLayer checked name="Escuro">
+          <TileLayer
+            attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
+        </LayersControl.BaseLayer>
 
-          <LayersControl.BaseLayer name="Satélite">
-            <TileLayer
-              attribution="Tiles &copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            />
-          </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Claro">
+          <TileLayer
+            attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          />
+        </LayersControl.BaseLayer>
 
-          <LayersControl.BaseLayer name="Claro">
-            <TileLayer
-              attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            />
-          </LayersControl.BaseLayer>
+        <LayersControl.Overlay checked name="Aerovias altas">
+          <FeatureGroup>
+            {aeroviasAltaNormalizadas.map((aerovia, index) => (
+              <Polyline
+                key={`alta-${aerovia.nome}-${index}`}
+                positions={aerovia.coords_latlon}
+                pathOptions={{
+                  color:
+                    aeroviaAltaHover === `${aerovia.nome}-${index}`
+                      ? COR_AEROVIA_HOVER
+                      : COR_AEROVIA_ALTA,
+                  weight: aeroviaAltaHover === `${aerovia.nome}-${index}` ? 3 : 1.2,
+                  opacity: 0.8
+                }}
+                eventHandlers={{
+                  mouseover: () => setAeroviaAltaHover(`${aerovia.nome}-${index}`),
+                  mouseout: () => setAeroviaAltaHover(null)
+                }}
+              >
+                <Tooltip sticky>{aerovia.nome}</Tooltip>
+              </Polyline>
+            ))}
+          </FeatureGroup>
+        </LayersControl.Overlay>
 
-          <LayersControl.Overlay checked name="Aeroportos">
-            <FeatureGroup>
-              {props.aeroportos.map((a) => (
-                <CircleMarker
-                  key={a.icao}
-                  center={[a.latitude, a.longitude]}
-                  radius={4}
-                  pathOptions={{ color: COR_AEROPORTO, fillColor: COR_AEROPORTO, fillOpacity: 0.95 }}
-                >
-                  <Popup>{a.icao}</Popup>
-                  <Tooltip>{a.icao}</Tooltip>
-                </CircleMarker>
-              ))}
-            </FeatureGroup>
-          </LayersControl.Overlay>
+        <LayersControl.Overlay checked name="Aerovias baixas">
+          <FeatureGroup>
+            {aeroviasBaixaNormalizadas.map((aerovia, index) => (
+              <Polyline
+                key={`baixa-${aerovia.nome}-${index}`}
+                positions={aerovia.coords_latlon}
+                pathOptions={{
+                  color:
+                    aeroviaBaixaHover === `${aerovia.nome}-${index}`
+                      ? COR_AEROVIA_HOVER
+                      : COR_AEROVIA_BAIXA,
+                  weight: aeroviaBaixaHover === `${aerovia.nome}-${index}` ? 3 : 1.2,
+                  opacity: 0.8
+                }}
+                eventHandlers={{
+                  mouseover: () => setAeroviaBaixaHover(`${aerovia.nome}-${index}`),
+                  mouseout: () => setAeroviaBaixaHover(null)
+                }}
+              >
+                <Tooltip sticky>{aerovia.nome}</Tooltip>
+              </Polyline>
+            ))}
+          </FeatureGroup>
+        </LayersControl.Overlay>
 
-          <LayersControl.Overlay name="Waypoints">
-            <FeatureGroup>
-              {props.waypoints.map((w) => (
-                <CircleMarker
-                  key={w.ident}
-                  center={[w.latitude, w.longitude]}
-                  radius={2}
-                  pathOptions={{ color: COR_WAYPOINT, fillColor: COR_WAYPOINT, fillOpacity: 0.9 }}
-                >
-                  <Popup>{w.ident}</Popup>
-                  <Tooltip>{w.ident}</Tooltip>
-                </CircleMarker>
-              ))}
-            </FeatureGroup>
-          </LayersControl.Overlay>
-
-          <LayersControl.Overlay name="Aerovias altas">
-            <FeatureGroup>
-              {aeroviasAltaNormalizadas.map((a, index) => (
-                <Polyline
-                  key={`${a.nome}-${index}`}
-                  positions={a.coords_latlon}
-                  pathOptions={estiloAeroviaAlta(a.nome)}
-                  eventHandlers={{
-                    mouseover: () => setAeroviaAltaHover(a.nome),
-                    mouseout: () => setAeroviaAltaHover((current) => (current === a.nome ? null : current))
-                  }}
-                >
-                  <Popup>Aerovia alta: {a.nome}</Popup>
-                  <Tooltip sticky direction="top" opacity={1}>
-                    {a.nome}
-                  </Tooltip>
-                </Polyline>
-              ))}
-            </FeatureGroup>
-          </LayersControl.Overlay>
-
-          <LayersControl.Overlay name="Aerovias baixas">
-            <FeatureGroup>
-              {aeroviasBaixaNormalizadas.map((a, index) => (
-                <Polyline
-                  key={`${a.nome}-${index}`}
-                  positions={a.coords_latlon}
-                  pathOptions={estiloAeroviaBaixa(a.nome)}
-                  eventHandlers={{
-                    mouseover: () => setAeroviaBaixaHover(a.nome),
-                    mouseout: () => setAeroviaBaixaHover((current) => (current === a.nome ? null : current))
-                  }}
-                >
-                  <Popup>Aerovia baixa: {a.nome}</Popup>
-                  <Tooltip sticky direction="top" opacity={1}>
-                    {a.nome}
-                  </Tooltip>
-                </Polyline>
-              ))}
-            </FeatureGroup>
-          </LayersControl.Overlay>
-
+        {aeroviasUruguayNormalizadas.length > 0 && (
           <LayersControl.Overlay checked name="Aerovias Uruguay">
             <FeatureGroup>
-              {aeroviasUruguayNormalizadas.map((a, index) => (
+              {aeroviasUruguayNormalizadas.map((aerovia, index) => (
                 <Polyline
-                  key={`uruguay-${a.nome}-${index}`}
-                  positions={a.coords_latlon}
-                  pathOptions={estiloAeroviaUruguay(a.nome)}
+                  key={`uru-${aerovia.nome}-${index}`}
+                  positions={aerovia.coords_latlon}
+                  pathOptions={{
+                    color:
+                      aeroviaUruguayHover === `${aerovia.nome}-${index}`
+                        ? COR_AEROVIA_HOVER
+                        : COR_AEROVIA_URUGUAY,
+                    weight: aeroviaUruguayHover === `${aerovia.nome}-${index}` ? 3 : 1.2,
+                    opacity: 0.8
+                  }}
                   eventHandlers={{
-                    mouseover: () => setAeroviaUruguayHover(a.nome),
-                    mouseout: () =>
-                      setAeroviaUruguayHover((current) => (current === a.nome ? null : current))
+                    mouseover: () => setAeroviaUruguayHover(`${aerovia.nome}-${index}`),
+                    mouseout: () => setAeroviaUruguayHover(null)
                   }}
                 >
-                  <Popup>Aerovia Uruguay: {a.nome}</Popup>
-                  <Tooltip sticky direction="top" opacity={1}>
-                    {a.nome}
-                  </Tooltip>
+                  <Tooltip sticky>{aerovia.nome}</Tooltip>
                 </Polyline>
               ))}
             </FeatureGroup>
           </LayersControl.Overlay>
+        )}
 
-          {props.mostrarFixas && (
-            <LayersControl.Overlay checked name="Áreas permanentes">
-              <FeatureGroup>
-                {areasFixasVisiveis.flatMap((area, areaIndex) =>
-                  area.coords_latlon.map((anel, anelIndex) => {
-                    const selecionadaNoMapa =
-                      props.areaMapaSelecionada?.tipo === "FIXA" &&
-                      props.areaMapaSelecionada.chave === areaFixaKey(area)
+        <LayersControl.Overlay checked name="Aeroportos">
+          <FeatureGroup>
+            {props.aeroportos.map((aeroporto) => (
+              <CircleMarker
+                key={`aeroporto-${aeroporto.icao}`}
+                center={[aeroporto.latitude, aeroporto.longitude]}
+                radius={3}
+                pathOptions={{
+                  color: COR_AEROPORTO,
+                  fillColor: COR_AEROPORTO,
+                  fillOpacity: 0.9,
+                  weight: 1
+                }}
+              >
+                <Tooltip sticky>{aeroporto.icao}</Tooltip>
+              </CircleMarker>
+            ))}
+          </FeatureGroup>
+        </LayersControl.Overlay>
 
-                    const style = estiloAreaBase({
-                      cor: corAreaPorTipo(area.area_type),
-                      selecionada: selecionadaNoMapa
-                    })
+        {props.waypoints.length > 0 && (
+          <LayersControl.Overlay checked name="Waypoints">
+            <FeatureGroup>
+              {props.waypoints.map((waypoint) => (
+                <CircleMarker
+                  key={`waypoint-${waypoint.ident}`}
+                  center={[waypoint.latitude, waypoint.longitude]}
+                  radius={2}
+                  pathOptions={{
+                    color: COR_WAYPOINT,
+                    fillColor: COR_WAYPOINT,
+                    fillOpacity: 0.8,
+                    weight: 1
+                  }}
+                >
+                  <Tooltip sticky>{waypoint.ident}</Tooltip>
+                </CircleMarker>
+              ))}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
 
-                    return (
-                      <Polygon
-                        key={`${area.nome}-${areaIndex}-${anelIndex}`}
-                        positions={anel}
-                        pathOptions={style}
-                        eventHandlers={{
-                          click: (e) => {
-                            L.DomEvent.stopPropagation(e)
+        <LayersControl.Overlay checked name="Rotas">
+          <FeatureGroup>
+            {rotasFiltradasPorImpacto.map((rota) => {
+              const key = rotaKey(rota)
+              const selecionada = rotaSelecionadaKeyAtual === key
+              const afetadaPelaArea = chavesRotasImpactadasPelaArea.has(key)
 
-                            const areaSel: NonNullable<AreaMapaSelecionada> = {
-                              tipo: "FIXA",
-                              chave: areaFixaKey(area),
-                              nome: area.nome
-                            }
+              let color = COR_ROTA_BASE
+              let weight = 2
+              let opacity = 0.9
 
-                            props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
-                          }
-                        }}
-                      >
-                        <Popup>
-                          <div>
-                            <div><strong>Nome:</strong> {area.nome}</div>
-                            <div><strong>Tipo:</strong> {area.area_type || "-"}</div>
-                            <div><strong>FIR:</strong> {area.fir_match || "-"}</div>
-                          </div>
-                        </Popup>
-                        <Tooltip sticky>{area.nome}</Tooltip>
-                      </Polygon>
-                    )
-                  })
-                )}
-              </FeatureGroup>
-            </LayersControl.Overlay>
-          )}
+              if (selecionada) {
+                color = COR_ROTA_SELECIONADA
+                weight = 4
+                opacity = 1
+              } else if (props.areaMapaSelecionada) {
+                color = afetadaPelaArea ? COR_ROTA_IMPACTADA : COR_ROTA_BASE
+                weight = afetadaPelaArea ? 3 : 2
+                opacity = 0.95
+              } else if (rota.impactada) {
+                color = COR_ROTA_IMPACTADA
+                weight = 2
+                opacity = 0.9
+              } else {
+                color = COR_ROTA_BASE
+                weight = 2
+                opacity = 0.75
+              }
 
-          {props.mostrarNotamCsv && (
-            <LayersControl.Overlay checked name="Áreas NOTAM">
-              <FeatureGroup>
-                {areasNotamVisiveis.map((area, index) => {
+              return (
+                <Polyline
+                  key={key}
+                  positions={rota.coords_latlon}
+                  pathOptions={{
+                    color,
+                    weight,
+                    opacity
+                  }}
+                  eventHandlers={{
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e)
+                      props.onSelecionarRota(rota)
+                    }
+                  }}
+                >
+                  <Popup>
+                    <div>
+                      <div><strong>Voo:</strong> {rota.ident || "-"}</div>
+                      <div><strong>Origem:</strong> {rota.origem || "-"}</div>
+                      <div><strong>Destino:</strong> {rota.destino || "-"}</div>
+                      <div><strong>Impacto:</strong> {textoTipoImpacto(rota)}</div>
+                    </div>
+                  </Popup>
+                  <Tooltip sticky>{rota.ident || `${rota.origem}-${rota.destino}`}</Tooltip>
+                </Polyline>
+              )
+            })}
+          </FeatureGroup>
+        </LayersControl.Overlay>
+
+        {props.mostrarFixas && (
+          <LayersControl.Overlay checked name="Áreas fixas">
+            <FeatureGroup>
+              {areasFixasNormalizadas.flatMap((area, areaIndex) =>
+                area.coords_latlon.map((anel, anelIndex) => {
                   const selecionadaNoMapa =
-                    props.areaMapaSelecionada?.tipo === "NOTAM" &&
-                    props.areaMapaSelecionada.chave === areaNotamKey(area)
+                    props.areaMapaSelecionada?.tipo === "FIXA" &&
+                    props.areaMapaSelecionada.chave === areaFixaKey(area)
 
                   const style = estiloAreaBase({
-                    cor: COR_TEMPORARIA,
+                    cor: corAreaPorTipo(area.area_type),
                     selecionada: selecionadaNoMapa
                   })
 
-                  if (
-                    area.geometry_type === "CIRCLE" &&
-                    area.center &&
-                    area.radius_m
-                  ) {
-                    return (
-                      <Circle
-                        key={`${area.nome}-${index}`}
-                        center={area.center}
-                        radius={area.radius_m}
-                        pathOptions={style}
-                        eventHandlers={{
-                          click: (e) => {
-                            L.DomEvent.stopPropagation(e)
-
-                            const areaSel: NonNullable<AreaMapaSelecionada> = {
-                              tipo: "NOTAM",
-                              chave: areaNotamKey(area),
-                              nome: area.nome
-                            }
-
-                            props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
-                          }
-                        }}
-                      >
-                        <Popup>
-                          <div>
-                            <div><strong>Nome:</strong> {area.nome}</div>
-                            <div><strong>NOTAM:</strong> {area.numero_notam || "-"}</div>
-                            <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
-                            <div><strong>Início:</strong> {area.valid_from || "-"}</div>
-                            <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
-                            <div
-                              dangerouslySetInnerHTML={{
-                                __html: formatarTextoNotam(area.texto_notam)
-                              }}
-                            />
-                          </div>
-                        </Popup>
-                        <Tooltip sticky>{area.nome}</Tooltip>
-                      </Circle>
-                    )
-                  }
-
                   return (
                     <Polygon
-                      key={`${area.nome}-${index}`}
-                      positions={area.coords_latlon}
+                      key={`${area.nome}-${areaIndex}-${anelIndex}`}
+                      positions={anel}
+                      pathOptions={style}
+                      eventHandlers={{
+                        click: (e) => {
+                          L.DomEvent.stopPropagation(e)
+
+                          const areaSel: NonNullable<AreaMapaSelecionada> = {
+                            tipo: "FIXA",
+                            chave: areaFixaKey(area),
+                            nome: area.nome
+                          }
+
+                          props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
+                        }
+                      }}
+                    >
+                      <Popup>
+                        <div>
+                          <div><strong>Nome:</strong> {area.nome}</div>
+                          <div><strong>Tipo:</strong> {area.area_type || "-"}</div>
+                          <div><strong>FIR:</strong> {area.fir_match || "-"}</div>
+                        </div>
+                      </Popup>
+                      <Tooltip sticky>{area.nome}</Tooltip>
+                    </Polygon>
+                  )
+                })
+              )}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
+        {props.mostrarNotamCsv && (
+          <LayersControl.Overlay checked name="Áreas NOTAM">
+            <FeatureGroup>
+              {areasNotamNormalizadas.map((area, index) => {
+                const selecionadaNoMapa =
+                  props.areaMapaSelecionada?.tipo === "NOTAM" &&
+                  props.areaMapaSelecionada.chave === areaNotamKey(area)
+
+                const style = estiloAreaBase({
+                  cor: area.lido ? COR_TEMPORARIA_LIDA : COR_TEMPORARIA,
+                  selecionada: selecionadaNoMapa
+                })
+
+                if (hasCircleGeometry(area)) {
+                  return (
+                    <Circle
+                      key={`${area.nome}-${index}-${area.source_id}`}
+                      center={area.center}
+                      radius={area.radius_m}
                       pathOptions={style}
                       eventHandlers={{
                         click: (e) => {
@@ -1128,98 +936,108 @@ export function MapView(props: Props) {
                         <div>
                           <div><strong>Nome:</strong> {area.nome}</div>
                           <div><strong>NOTAM:</strong> {area.numero_notam || "-"}</div>
+                          <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
                           <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                           <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
+                          <div
+                            dangerouslySetInnerHTML={{
+                              __html: formatarTextoNotam(area.texto_notam)
+                            }}
+                          />
                         </div>
                       </Popup>
                       <Tooltip sticky>{area.nome}</Tooltip>
-                      <Tooltip sticky>{area.nome}</Tooltip>
-                    </Polygon>
+                    </Circle>
                   )
-                })}
-              </FeatureGroup>
-            </LayersControl.Overlay>
-          )}
+                }
 
-          {props.mostrarTemporarias && (
-            <LayersControl.Overlay checked name="Áreas manuais">
-              <FeatureGroup>
-                {areasTemporariasVisiveis.map((area, index) => {
-                  const selecionadaNoMapa =
-                    props.areaMapaSelecionada?.tipo === "MANUAL" &&
-                    props.areaMapaSelecionada.chave === areaManualKey(area)
+                return (
+                  <Polygon
+                    key={`${area.nome}-${index}-${area.source_id}`}
+                    positions={area.coords_latlon}
+                    pathOptions={style}
+                    eventHandlers={{
+                      click: (e) => {
+                        L.DomEvent.stopPropagation(e)
 
-                  const style = estiloAreaBase({
-                    cor: selecionadaNoMapa ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
-                    selecionada: selecionadaNoMapa
-                  })
-
-                  return (
-                    <Polygon
-                      key={`${area.nome}-${index}`}
-                      positions={area.coords_latlon}
-                      pathOptions={style}
-                      eventHandlers={{
-                        click: (e) => {
-                          L.DomEvent.stopPropagation(e)
-
-                          const areaSel: NonNullable<AreaMapaSelecionada> = {
-                            tipo: "MANUAL",
-                            chave: areaManualKey(area),
-                            nome: area.nome
-                          }
-
-                          props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
+                        const areaSel: NonNullable<AreaMapaSelecionada> = {
+                          tipo: "NOTAM",
+                          chave: areaNotamKey(area),
+                          nome: area.nome
                         }
-                      }}
-                    >
-                      <Popup>
-                        <div>
-                          <div><strong>Nome:</strong> {area.nome}</div>
-                          <div><strong>Pontos:</strong> {area.coords_latlon.length}</div>
-                        </div>
-                      </Popup>
-                      <Tooltip sticky>{area.nome}</Tooltip>
-                    </Polygon>
-                  )
-                })}
-              </FeatureGroup>
-            </LayersControl.Overlay>
-          )}
 
-          <LayersControl.Overlay checked name="Rotas">
-            <FeatureGroup>
-              {rotasVisiveis.map((rota, index) => (
-                <Polyline
-                  key={`${rotaKey(rota)}-${index}`}
-                  positions={rota.coords_latlon}
-                  pathOptions={estiloRota(rota)}
-                  eventHandlers={{
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e)
-                      props.onSelecionarRota(rota)
-                    }
-                  }}
-                >
-                  <Popup>
-                    <div>
-                      <div><strong>Voo:</strong> {rota.ident || "-"}</div>
-                      <div><strong>Origem:</strong> {rota.origem}</div>
-                      <div><strong>Destino:</strong> {rota.destino}</div>
-                      <div><strong>Aeronave:</strong> {rota.tipo_anv || "-"}</div>
-                      <div><strong>FL:</strong> {rota.nivel_voo || "-"}</div>
-                      <div><strong>Impacto:</strong> {textoTipoImpacto(rota)}</div>
-                    </div>
-                  </Popup>
-                  <Tooltip sticky>
-                    {rota.ident || "-"} | {rota.origem} → {rota.destino}
-                  </Tooltip>
-                </Polyline>
-              ))}
+                        props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
+                      }
+                    }}
+                  >
+                    <Popup>
+                      <div>
+                        <div><strong>Nome:</strong> {area.nome}</div>
+                        <div><strong>NOTAM:</strong> {area.numero_notam || "-"}</div>
+                        <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
+                        <div><strong>Início:</strong> {area.valid_from || "-"}</div>
+                        <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
+                        <div
+                          dangerouslySetInnerHTML={{
+                            __html: formatarTextoNotam(area.texto_notam)
+                          }}
+                        />
+                      </div>
+                    </Popup>
+                    <Tooltip sticky>{area.nome}</Tooltip>
+                  </Polygon>
+                )
+              })}
             </FeatureGroup>
           </LayersControl.Overlay>
-        </LayersControl>
-      </MapContainer>
-    </div>
+        )}
+
+        {props.mostrarTemporarias && (
+          <LayersControl.Overlay checked name="Áreas temporárias">
+            <FeatureGroup>
+              {areasTemporariasNormalizadas.map((area, index) => {
+                const selecionadaNoMapa =
+                  props.areaMapaSelecionada?.tipo === "MANUAL" &&
+                  props.areaMapaSelecionada.chave === areaManualKey(area)
+
+                return (
+                  <Polygon
+                    key={`${area.nome}-${index}`}
+                    positions={area.coords_latlon}
+                    pathOptions={{
+                      color: selecionadaNoMapa ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
+                      weight: selecionadaNoMapa ? 3 : 1.5,
+                      opacity: 1,
+                      fillColor: selecionadaNoMapa ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
+                      fillOpacity: 0.2
+                    }}
+                    eventHandlers={{
+                      click: (e) => {
+                        L.DomEvent.stopPropagation(e)
+
+                        const areaSel: NonNullable<AreaMapaSelecionada> = {
+                          tipo: "MANUAL",
+                          chave: areaManualKey(area),
+                          nome: area.nome
+                        }
+
+                        props.onSelecionarArea(areaSel, calcularRotasAfetadas(areaSel))
+                      }
+                    }}
+                  >
+                    <Popup>
+                      <div>
+                        <div><strong>Nome:</strong> {area.nome}</div>
+                      </div>
+                    </Popup>
+                    <Tooltip sticky>{area.nome}</Tooltip>
+                  </Polygon>
+                )
+              })}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+      </LayersControl>
+    </MapContainer>
   )
 }

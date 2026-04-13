@@ -46,7 +46,7 @@ function normalizarTexto(valor: unknown) {
 }
 
 function areaNotamKeyApp(area: AreaNotamCsv) {
-  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}`
+  return `NOTAM|${area.numero_notam || area.nome}|${area.fir_match}|${area.geometry_type}|${area.source_id || ""}`
 }
 
 function isValidCoordApp(point: unknown): point is LatLon {
@@ -433,7 +433,6 @@ function AreaImpactPanel({
                   >
                     <div><strong>{rota.ident || "-"}</strong></div>
                     <div>{rota.origem} → {rota.destino}</div>
-                    <div>{rota.tipo_anv || "-"} | FL {rota.nivel_voo || "-"}</div>
                     <div>{textoTipoImpacto(rota)}</div>
                   </button>
                 )
@@ -450,151 +449,38 @@ function AreaImpactPanel({
 
 export default function App() {
   const [data, setData] = useState<BootstrapResponse | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [inputNome, setInputNome] = useState("AREA TEMPORARIA 1")
-  const [inputCoords, setInputCoords] = useState(INITIAL_COORDS)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mostrarFixas, setMostrarFixas] = useState(true)
   const [mostrarNotamCsv, setMostrarNotamCsv] = useState(true)
   const [mostrarTemporarias, setMostrarTemporarias] = useState(true)
   const [areaSelecionada, setAreaSelecionada] = useState<string | null>(null)
   const [filtroImpacto, setFiltroImpacto] = useState<FiltroImpacto>("TODAS")
   const [rotaSelecionadaKey, setRotaSelecionadaKey] = useState<string | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [notamSidebarOpen, setNotamSidebarOpen] = useState(false)
-  const [areasTemporariasManuais, setAreasTemporariasManuais] = useState<AreaTemporaria[]>([])
   const [areaMapaSelecionada, setAreaMapaSelecionada] = useState<AreaMapaSelecionada>(null)
   const [rotasImpactadasPelaArea, setRotasImpactadasPelaArea] = useState<RotaAnalisada[]>([])
+  const [mostrarSidebarNotam, setMostrarSidebarNotam] = useState(false)
+  const [inputCoords, setInputCoords] = useState(INITIAL_COORDS)
+  const [inputNome, setInputNome] = useState(nextAreaName(0))
+  const [areasTemporariasLocais, setAreasTemporariasLocais] = useState<AreaTemporaria[]>([])
 
-  const carregarBootstrap = useCallback(async () => {
-    setLoading(true)
-    setError("")
-
+  const carregar = useCallback(async () => {
     try {
-      const response = await getBootstrap()
-      setData(response)
-
-      if (!areaSelecionada && areasTemporariasManuais.length > 0) {
-        setAreaSelecionada(areasTemporariasManuais[0].nome)
-      }
-
-      if (!areaSelecionada && response.areas_temporarias.length > 0) {
-        setAreaSelecionada(response.areas_temporarias[0].nome)
-      }
-
-      setInputNome(
-        nextAreaName(
-          (response.areas_temporarias?.length ?? 0) + areasTemporariasManuais.length
-        )
-      )
+      setLoading(true)
+      setError("")
+      const bootstrap = await getBootstrap(true)
+      setData(bootstrap)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar dados")
+      setError(err instanceof Error ? err.message : "Erro ao carregar")
     } finally {
       setLoading(false)
     }
-  }, [areaSelecionada, areasTemporariasManuais])
+  }, [])
 
   useEffect(() => {
-    void carregarBootstrap()
-  }, [carregarBootstrap])
-
-  async function handleAdicionar() {
-    setLoading(true)
-    setError("")
-
-    try {
-      const coords = parseCoordsInput(inputCoords)
-      const nomeBase = inputNome.trim() || nextAreaName(areasTemporariasManuais.length)
-
-      const nomeJaExisteNoFrontend = areasTemporariasManuais.some(
-        (area) => area.nome.trim().toUpperCase() === nomeBase.trim().toUpperCase()
-      )
-
-      const nomeJaExisteNoBackend = (data?.areas_temporarias ?? []).some(
-        (area) => area.nome.trim().toUpperCase() === nomeBase.trim().toUpperCase()
-      )
-
-      if (nomeJaExisteNoFrontend || nomeJaExisteNoBackend) {
-        throw new Error("Já existe uma área com esse nome")
-      }
-
-      const novaArea: AreaTemporaria = {
-        nome: nomeBase,
-        coords_latlon: coords
-      }
-
-      setAreasTemporariasManuais((current) => [...current, novaArea])
-      setAreaSelecionada(nomeBase)
-      setInputNome(
-        nextAreaName((data?.areas_temporarias?.length ?? 0) + areasTemporariasManuais.length + 1)
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao adicionar área")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleRemover() {
-    if (!areaSelecionada) return
-
-    setLoading(true)
-    setError("")
-
-    try {
-      const proximoArray = areasTemporariasManuais.filter(
-        (area) => area.nome !== areaSelecionada
-      )
-
-      setAreasTemporariasManuais(proximoArray)
-
-      const backendAreas = data?.areas_temporarias ?? []
-      const primeiraBackend = backendAreas[0]?.nome ?? null
-      const primeiraFrontend = proximoArray[0]?.nome ?? null
-
-      if (areaSelecionada && areasTemporariasManuais.some((a) => a.nome === areaSelecionada)) {
-        setAreaSelecionada(primeiraFrontend ?? primeiraBackend)
-      }
-
-      setInputNome(nextAreaName((data?.areas_temporarias?.length ?? 0) + proximoArray.length))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao remover área")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleLimpar() {
-    setLoading(true)
-    setError("")
-
-    try {
-      setAreasTemporariasManuais([])
-      setAreaSelecionada(data?.areas_temporarias?.[0]?.nome ?? null)
-      setInputNome(nextAreaName(data?.areas_temporarias?.length ?? 0))
-      setAreaMapaSelecionada(null)
-      setRotasImpactadasPelaArea([])
-      setRotaSelecionadaKey(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao limpar áreas")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const areasTemporariasCompletas = useMemo(() => {
-    const backendAreas = data?.areas_temporarias ?? []
-    return [...backendAreas, ...areasTemporariasManuais]
-  }, [data, areasTemporariasManuais])
-
-  const rotasTodas = useMemo(() => {
-    return data?.rotas_analisadas ?? []
-  }, [data])
-
-  const rotaSelecionada = useMemo(() => {
-    if (!data || !rotaSelecionadaKey) return null
-    return data.rotas_analisadas.find((rota) => rotaKey(rota) === rotaSelecionadaKey) || null
-  }, [data, rotaSelecionadaKey])
+    void carregar()
+  }, [carregar])
 
   useEffect(() => {
     if (!data || !rotaSelecionadaKey) return
@@ -605,6 +491,19 @@ export default function App() {
       setRotaSelecionadaKey(null)
     }
   }, [data, rotaSelecionadaKey])
+
+  const areasTemporarias = useMemo(() => {
+    return [...areasTemporariasLocais, ...(data?.areas_temporarias ?? [])]
+  }, [areasTemporariasLocais, data])
+
+  const rotasTodas = useMemo(() => {
+    return data?.rotas_analisadas ?? []
+  }, [data])
+
+  const rotaSelecionada = useMemo(() => {
+    if (!rotaSelecionadaKey) return null
+    return rotasTodas.find((rota) => rotaKey(rota) === rotaSelecionadaKey) ?? null
+  }, [rotasTodas, rotaSelecionadaKey])
 
   const handleSelecionarRota = useCallback((rota: RotaAnalisada | null) => {
     if (!rota) {
@@ -701,30 +600,68 @@ export default function App() {
     setRotasImpactadasPelaArea([])
   }, [])
 
+  const handleAdicionarAreaTemporaria = useCallback(() => {
+    try {
+      const coords = parseCoordsInput(inputCoords)
+      const nome = inputNome.trim() || nextAreaName(areasTemporariasLocais.length)
+
+      setAreasTemporariasLocais((current) => [
+        ...current,
+        { nome, coords_latlon: coords }
+      ])
+      setInputNome(nextAreaName(areasTemporariasLocais.length + 1))
+      setError("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao adicionar área")
+    }
+  }, [inputCoords, inputNome, areasTemporariasLocais.length])
+
+  const handleRemoverAreaTemporaria = useCallback(() => {
+    if (!areaSelecionada) return
+
+    setAreasTemporariasLocais((current) =>
+      current.filter((area) => area.nome !== areaSelecionada)
+    )
+    setAreaSelecionada(null)
+    setAreaMapaSelecionada(null)
+    setRotasImpactadasPelaArea([])
+  }, [areaSelecionada])
+
+  const handleLimparAreasTemporarias = useCallback(() => {
+    setAreasTemporariasLocais([])
+    setAreaSelecionada(null)
+    setAreaMapaSelecionada(null)
+    setRotasImpactadasPelaArea([])
+  }, [])
+
   if (!data && loading) {
     return <LoadingScreen />
   }
 
+  if (!data && error) {
+    return <ErrorScreen error={error} onRetry={() => void carregar()} />
+  }
+
   if (!data) {
-    return <ErrorScreen error={error} onRetry={() => void carregarBootstrap()} />
+    return null
   }
 
   return (
-    <div className={`app-layout ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+    <div className="app-shell">
       <Sidebar
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen((value) => !value)}
-        inputNome={inputNome}
-        setInputNome={setInputNome}
+        onToggle={() => setSidebarOpen((current) => !current)}
         inputCoords={inputCoords}
         setInputCoords={setInputCoords}
+        inputNome={inputNome}
+        setInputNome={setInputNome}
         mostrarFixas={mostrarFixas}
         setMostrarFixas={setMostrarFixas}
         mostrarNotamCsv={mostrarNotamCsv}
         setMostrarNotamCsv={setMostrarNotamCsv}
         mostrarTemporarias={mostrarTemporarias}
         setMostrarTemporarias={setMostrarTemporarias}
-        areasTemporarias={areasTemporariasCompletas}
+        areasTemporarias={areasTemporarias}
         areaSelecionada={areaSelecionada}
         setAreaSelecionada={setAreaSelecionada}
         rotasImpactadas={rotasTodas}
@@ -732,26 +669,38 @@ export default function App() {
         setFiltroImpacto={setFiltroImpacto}
         rotaSelecionadaKey={rotaSelecionadaKey}
         onSelecionarRota={handleSelecionarRota}
-        onAdicionar={() => void handleAdicionar()}
-        onRemover={() => void handleRemover()}
-        onLimpar={() => void handleLimpar()}
+        onAdicionar={handleAdicionarAreaTemporaria}
+        onRemover={handleRemoverAreaTemporaria}
+        onLimpar={handleLimparAreasTemporarias}
         loading={loading}
         error={error}
       />
 
-      <main className={`content relative ${rotaSelecionada || areaMapaSelecionada ? "with-route-panel" : ""}`}>
-        {!sidebarOpen ? (
-          <button className="floating-sidebar-toggle" onClick={() => setSidebarOpen(true)}>
+      <main className={`content ${rotaSelecionada || areaMapaSelecionada ? "with-route-panel" : ""}`}>
+        {!sidebarOpen && (
+          <button
+            type="button"
+            className="sidebar-floating-button"
+            onClick={() => setSidebarOpen(true)}
+          >
             ☰
           </button>
-        ) : null}
+        )}
+
+        <button
+          type="button"
+          className="notam-floating-button"
+          onClick={() => setMostrarSidebarNotam((current) => !current)}
+        >
+          NOTAMs
+        </button>
 
         <MapView
           aeroportos={data.aeroportos}
           waypoints={data.waypoints}
           areasFixas={data.areas_fixas}
           areasNotamCsv={data.areas_notam_csv}
-          areasTemporarias={areasTemporariasCompletas}
+          areasTemporarias={areasTemporarias}
           rotasAnalisadas={data.rotas_analisadas}
           aeroviasAlta={data.aerovias_alta}
           aeroviasBaixa={data.aerovias_baixa}
@@ -768,14 +717,24 @@ export default function App() {
           onLimparSelecoes={handleLimparSelecoes}
         />
 
-        {rotaSelecionada ? (
+        {mostrarSidebarNotam && (
+          <NotamSidebar
+            notams={data.areas_notam_csv}
+            areaMapaSelecionada={areaMapaSelecionada}
+            onSelectNotam={handleSelecionarNotamSidebar}
+            onClose={() => setMostrarSidebarNotam(false)}
+            onReadStateChanged={() => void carregar()}
+          />
+        )}
+
+        {rotaSelecionada && (
           <RouteDetailsPanel
             rota={rotaSelecionada}
-            onClose={() => handleSelecionarRota(null)}
+            onClose={() => setRotaSelecionadaKey(null)}
           />
-        ) : null}
+        )}
 
-        {!rotaSelecionada && areaMapaSelecionada ? (
+        {!rotaSelecionada && areaMapaSelecionada && (
           <AreaImpactPanel
             area={areaMapaSelecionada}
             rotas={rotasImpactadasPelaArea}
@@ -783,27 +742,7 @@ export default function App() {
             onSelecionarRota={handleSelecionarRota}
             rotaSelecionadaKeyAtual={rotaSelecionadaKey}
           />
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => setNotamSidebarOpen((value) => !value)}
-          className="notam-floating-button"
-          title={notamSidebarOpen ? "Fechar NOTAMs" : "Abrir NOTAMs"}
-        >
-          {notamSidebarOpen ? "×" : "NOTAMs"}
-        </button>
-
-        {notamSidebarOpen ? (
-          <div className="notam-sidebar-shell">
-            <NotamSidebar
-              notams={Array.isArray(data?.areas_notam_csv) ? data.areas_notam_csv : []}
-              areaMapaSelecionada={areaMapaSelecionada}
-              onSelectNotam={handleSelecionarNotamSidebar}
-              onClose={() => setNotamSidebarOpen(false)}
-            />
-          </div>
-        ) : null}
+        )}
       </main>
     </div>
   )
