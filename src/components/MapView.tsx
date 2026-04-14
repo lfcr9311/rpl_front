@@ -43,6 +43,7 @@ type Props = {
   areaMapaSelecionada: AreaMapaSelecionada
   filtroImpacto: FiltroImpacto
   rotaSelecionada: RotaAnalisada | null
+  notamsLidos?: Set<string>
   onSelecionarRota: (rota: RotaAnalisada | null) => void
   onSelecionarArea: (
     area: AreaMapaSelecionada,
@@ -342,6 +343,11 @@ function hasCircleGeometry(area: AreaNotamCsv): area is AreaNotamCsv & {
     typeof area.radius_m === "number" &&
     Number.isFinite(area.radius_m)
   )
+}
+
+function isNotamLido(area: AreaNotamCsv, notamsLidos?: Set<string>): boolean {
+  if (notamsLidos?.has(areaNotamKey(area))) return true
+  return !!area.lido
 }
 
 function FitToSelectedArea({
@@ -907,7 +913,9 @@ export function MapView(props: Props) {
                   props.areaMapaSelecionada.chave === areaNotamKey(area)
 
                 const style = estiloAreaBase({
-                  cor: area.lido ? COR_TEMPORARIA_LIDA : COR_TEMPORARIA,
+                  cor: isNotamLido(area, props.notamsLidos)
+                    ? COR_TEMPORARIA_LIDA
+                    : COR_TEMPORARIA,
                   selecionada: selecionadaNoMapa
                 })
 
