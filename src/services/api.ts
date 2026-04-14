@@ -162,6 +162,8 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
   }
 
   const sourceId = String(notam?.source_id ?? notam?.sourceId ?? notam?.id ?? "").trim()
+  const lowerLimit = String(notam?.f ?? "").trim()
+  const upperLimit = String(notam?.g ?? "").trim()
 
   if (coordsFromPayload.length >= 3 || coordsFromText.length >= 3) {
     return {
@@ -210,6 +212,8 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         notam?.text ??
         notam?.e ??
         "",
+      f: lowerLimit,
+      g: upperLimit,
       geometry_type: "POLYGON",
       center: null,
       radius_m: null,
@@ -265,6 +269,8 @@ function normalizeNotam(notam: any): AreaNotamCsv | null {
         notam?.text ??
         notam?.e ??
         "",
+      f: lowerLimit,
+      g: upperLimit,
       geometry_type: "CIRCLE",
       center: parsedCircle.center,
       radius_m: parsedCircle.radius_m,

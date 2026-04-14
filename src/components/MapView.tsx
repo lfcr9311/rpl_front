@@ -325,8 +325,20 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;")
 }
 
-function formatarTextoNotam(texto: string) {
-  return escapeHtml(texto || "-").replace(/\n/g, "<br>")
+function formatarTextoNotam(area: AreaNotamCsv) {
+  const partes: string[] = []
+
+  if (area.f) {
+    partes.push(`<strong>Limite inferior (F):</strong> ${escapeHtml(area.f)}`)
+  }
+
+  if (area.g) {
+    partes.push(`<strong>Limite superior (G):</strong> ${escapeHtml(area.g)}`)
+  }
+
+  partes.push(escapeHtml(area.texto_notam || "-").replace(/\n/g, "<br>"))
+
+  return partes.join("<br>")
 }
 
 function hasCircleGeometry(area: AreaNotamCsv): area is AreaNotamCsv & {
@@ -949,7 +961,7 @@ export function MapView(props: Props) {
                           <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
                           <div
                             dangerouslySetInnerHTML={{
-                              __html: formatarTextoNotam(area.texto_notam)
+                              __html: formatarTextoNotam(area)
                             }}
                           />
                         </div>
@@ -987,7 +999,7 @@ export function MapView(props: Props) {
                         <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
                         <div
                           dangerouslySetInnerHTML={{
-                            __html: formatarTextoNotam(area.texto_notam)
+                            __html: formatarTextoNotam(area)
                           }}
                         />
                       </div>
