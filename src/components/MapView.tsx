@@ -495,8 +495,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-              .map((anel) => normalizeRing(anel))
-              .filter((anel) => anel.length >= 3)
+            .map((anel) => normalizeRing(anel))
+            .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -626,9 +626,9 @@ export function MapView(props: Props) {
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-        ]
+        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+      ]
       : [-15, -55]
 
   const aeroviasAltaNormalizadas = useMemo(() => {
@@ -662,6 +662,13 @@ export function MapView(props: Props) {
     <MapContainer
       center={center}
       zoom={5}
+      minZoom={4}
+      maxZoom={12}
+      maxBounds={[
+        [-60, -170], // sul + extremo oeste (Pacífico)
+        [70, 30]     // norte Europa + oeste África
+      ]}
+      maxBoundsViscosity={1.0}
       style={{ width: "100%", height: "100%" }}
       preferCanvas
     >

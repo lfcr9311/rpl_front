@@ -47,23 +47,13 @@ export function rotaCasaNoFiltro(rota: RotaAnalisada, filtro: FiltroImpacto): bo
   return true
 }
 
-function Header({
-  isOpen,
-  onToggle
-}: {
-  isOpen: boolean
-  onToggle: () => void
-}) {
+function Header() {
   return (
     <div className="sidebar-header sidebar-header-row">
       <div>
         <h1 className="app-title">NOTAM Map</h1>
         <p className="app-subtitle">Áreas, NOTAM e rotas</p>
       </div>
-
-      <button className="sidebar-toggle-btn" onClick={onToggle}>
-        {isOpen ? "×" : "☰"}
-      </button>
     </div>
   )
 }
@@ -306,37 +296,22 @@ function RotasImpactadasSection({
       ) : null}
 
       <div className="list-scroll">
-        {rotasFiltradas.length === 0 ? (
-          <div className="empty">Nenhuma rota encontrada</div>
-        ) : (
-          rotasFiltradas.map((rota, index) => {
-            const active = rotaSelecionadaKey === rotaKey(rota)
+        {rotasFiltradas.map((rota, index) => {
+          const active = rotaSelecionadaKey === rotaKey(rota)
 
-            return (
-              <button
-                key={`${rota.ident}-${rota.origem}-${rota.destino}-${rota.eobt}-${index}`}
-                className={`route-list-item ${active ? "active" : ""}`}
-                onClick={() => onSelecionarRota(active ? null : rota)}
-              >
-                <div className="route-line">
-                  <strong>Número do voo:</strong> {rota.ident || "-"}
-                </div>
-
-                <div className="route-line">
-                  <strong>Origem/Destino:</strong> {rota.origem} → {rota.destino}
-                </div>
-
-                <div className="route-line">
-                  <strong>Horários:</strong> {formatarHora(rota.eobt)} | {formatarHora(rota.eet)} | {formatarHora(rota.eta)}
-                </div>
-
-                <div className="route-line">
-                  <strong>Aeronave:</strong> {rota.tipo_anv || "-"}
-                </div>
-              </button>
-            )
-          })
-        )}
+          return (
+            <button
+              key={`${rota.ident}-${rota.origem}-${rota.destino}-${rota.eobt}-${index}`}
+              className={`route-list-item ${active ? "active" : ""}`}
+              onClick={() => onSelecionarRota(active ? null : rota)}
+            >
+              <div><strong>Número do voo:</strong> {rota.ident || "-"}</div>
+              <div><strong>Origem/Destino:</strong> {rota.origem} → {rota.destino}</div>
+              <div><strong>Horários:</strong> {formatarHora(rota.eobt)} | {formatarHora(rota.eet)} | {formatarHora(rota.eta)}</div>
+              <div><strong>Aeronave:</strong> {rota.tipo_anv || "-"}</div>
+            </button>
+          )
+        })}
       </div>
     </SectionCard>
   )
@@ -345,7 +320,7 @@ function RotasImpactadasSection({
 export function Sidebar(props: Props) {
   return (
     <aside className={`sidebar ${props.isOpen ? "" : "hidden"}`}>
-      <Header isOpen={props.isOpen} onToggle={props.onToggle} />
+      <Header />
 
       <ManualAreaSection {...props} />
 
