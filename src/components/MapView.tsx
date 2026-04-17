@@ -70,7 +70,8 @@ const COR_TEMPORARIA_LIDA = "#16a34a"
 const COR_TEMPORARIA_SELECIONADA = "#00ffff"
 const COR_AREA_DESTACADA = "#fde047"
 const COR_AEROVIA_HOVER = "#ffffff"
-const COR_FIR = "#ffff00"
+const COR_FIR = "#ffffff"
+const COR_NOTAM_ALTO = "#f43f5e"
 
 function isValidCoord(point: unknown): point is LatLon {
   return (
@@ -118,6 +119,59 @@ function corAreaPorTipo(areaType: string): string {
   if (t === "PROHIBITED") return COR_AREA_PROHIBITED
   if (t === "DANGER") return COR_AREA_DANGER
   return COR_AREA_DEFAULT
+}
+
+function parseAltitudeFeet(value?: string | null): number | null {
+  const raw = String(value ?? "").trim().toUpperCase()
+  if (!raw) return null
+
+  if (raw === "UNL" || raw === "UNLIMITED") return 999999
+  if (raw === "SFC" || raw === "GND" || raw.includes("AGL")) return 0
+
+  const flMatch = raw.match(/\bFL\s*(\d{2,3})\b/)
+  if (flMatch) {
+    return Number(flMatch[1]) * 100
+  }
+
+  const fMatch = raw.match(/\bF(\d{2,3})\b/)
+  if (fMatch) {
+    return Number(fMatch[1]) * 100
+  }
+
+  const ftMatch = raw.match(/\b(\d{4,6})\s*FT\b/)
+  if (ftMatch) {
+    return Number(ftMatch[1])
+  }
+
+  const plainNumber = raw.match(/\b(\d{3,6})\b/)
+  if (plainNumber) {
+    const valueNum = Number(plainNumber[1])
+
+    if (valueNum <= 999) {
+      return valueNum * 100
+    }
+
+    return valueNum
+  }
+
+  return null
+}
+
+function isUpperLimitHigh(area: AreaNotamCsv): boolean {
+  const feet = parseAltitudeFeet(area.g)
+  return feet !== null && feet > 10000
+}
+
+function corNotam(area: AreaNotamCsv, notamsLidos?: Set<string>): string {
+  if (isNotamLido(area, notamsLidos)) {
+    return COR_TEMPORARIA_LIDA
+  }
+
+  if (isUpperLimitHigh(area)) {
+    return COR_NOTAM_ALTO
+  }
+
+  return COR_TEMPORARIA
 }
 
 function rotaCasaNoFiltro(rota: RotaAnalisada, filtro: FiltroImpacto): boolean {
@@ -725,10 +779,10 @@ export function MapView(props: Props) {
                 positions={fir.coords_latlon}
                 pathOptions={{
                   color: COR_FIR,
-                  weight: 2,
-                  opacity: 1,
+                  weight: 1,
+                  opacity: 0.18,
                   fillColor: COR_FIR,
-                  fillOpacity: 0.08
+                  fillOpacity: 0.015
                 }}
               >
                 <Tooltip sticky>{fir.nome || fir.ident || fir.icaocode}</Tooltip>
@@ -984,9 +1038,7 @@ export function MapView(props: Props) {
                   props.areaMapaSelecionada.chave === areaNotamKey(area)
 
                 const style = estiloAreaBase({
-                  cor: isNotamLido(area, props.notamsLidos)
-                    ? COR_TEMPORARIA_LIDA
-                    : COR_TEMPORARIA,
+                  cor: corNotam(area, props.notamsLidos),
                   selecionada: selecionadaNoMapa
                 })
 
@@ -1018,6 +1070,7 @@ export function MapView(props: Props) {
                           <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
                           <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                           <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
+                          <div><strong>Faixa alta:</strong> {isUpperLimitHigh(area) ? "SIM" : "NÃO"}</div>
                           <div
                             dangerouslySetInnerHTML={{
                               __html: formatarTextoNotam(area)
@@ -1056,6 +1109,7 @@ export function MapView(props: Props) {
                         <div><strong>Q-line:</strong> {area.q_line || "-"}</div>
                         <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                         <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
+                        <div><strong>Faixa alta:</strong> {isUpperLimitHigh(area) ? "SIM" : "NÃO"}</div>
                         <div
                           dangerouslySetInnerHTML={{
                             __html: formatarTextoNotam(area)
