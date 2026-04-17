@@ -14,6 +14,7 @@ import {
 } from "react-leaflet"
 import L from "leaflet"
 import { useEffect, useMemo, useState } from "react"
+import { getFirs, type FirArea } from "../services/api"
 import type {
   Airport,
   Waypoint,
@@ -69,6 +70,7 @@ const COR_TEMPORARIA_LIDA = "#16a34a"
 const COR_TEMPORARIA_SELECIONADA = "#00ffff"
 const COR_AREA_DESTACADA = "#fde047"
 const COR_AEROVIA_HOVER = "#ffffff"
+const COR_FIR = "#ffff00"
 
 function isValidCoord(point: unknown): point is LatLon {
   return (
@@ -478,6 +480,27 @@ export function MapView(props: Props) {
   const [aeroviaAltaHover, setAeroviaAltaHover] = useState<string | null>(null)
   const [aeroviaBaixaHover, setAeroviaBaixaHover] = useState<string | null>(null)
   const [aeroviaUruguayHover, setAeroviaUruguayHover] = useState<string | null>(null)
+  const [firs, setFirs] = useState<FirArea[]>([])
+
+  useEffect(() => {
+    let mounted = true
+
+    getFirs()
+      .then((data) => {
+        if (!mounted) return
+        console.log("FIRS BACKEND:", data)
+        setFirs(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar FIRs:", err)
+        if (!mounted) return
+        setFirs([])
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const selectedAreaManualSidebar =
     props.areasTemporarias.find((a) => a.nome === props.areaSelecionada) ?? null
@@ -495,8 +518,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-            .map((anel) => normalizeRing(anel))
-            .filter((anel) => anel.length >= 3)
+              .map((anel) => normalizeRing(anel))
+              .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -626,9 +649,9 @@ export function MapView(props: Props) {
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-      ]
+          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+        ]
       : [-15, -55]
 
   const aeroviasAltaNormalizadas = useMemo(() => {
@@ -662,11 +685,10 @@ export function MapView(props: Props) {
     <MapContainer
       center={center}
       zoom={5}
-      minZoom={4}
       maxZoom={12}
       maxBounds={[
-        [-60, -170], // sul + extremo oeste (Pacífico)
-        [70, 30]     // norte Europa + oeste África
+        [-60, -170],
+        [70, 30]
       ]}
       maxBoundsViscosity={1.0}
       style={{ width: "100%", height: "100%" }}
@@ -694,6 +716,36 @@ export function MapView(props: Props) {
             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
         </LayersControl.BaseLayer>
+
+        <LayersControl.Overlay checked name="FIRs">
+          <FeatureGroup>
+            {firs.map((fir) => (
+              <Polygon
+                key={`fir-${fir.id || fir.icaocode || fir.ident || fir.nome}`}
+                positions={fir.coords_latlon}
+                pathOptions={{
+                  color: COR_FIR,
+                  weight: 2,
+                  opacity: 1,
+                  fillColor: COR_FIR,
+                  fillOpacity: 0.08
+                }}
+              >
+                <Tooltip sticky>{fir.nome || fir.ident || fir.icaocode}</Tooltip>
+                <Popup>
+                  <div>
+                    <div><strong>Nome:</strong> {fir.nome || "-"}</div>
+                    <div><strong>Ident:</strong> {fir.ident || "-"}</div>
+                    <div><strong>ICAO:</strong> {fir.icaocode || "-"}</div>
+                    <div><strong>Related FIR:</strong> {fir.relatedfir || "-"}</div>
+                    <div><strong>Tipo:</strong> {fir.tipo || "-"}</div>
+                    <div><strong>Pontos:</strong> {fir.coords_latlon.length}</div>
+                  </div>
+                </Popup>
+              </Polygon>
+            ))}
+          </FeatureGroup>
+        </LayersControl.Overlay>
 
         <LayersControl.Overlay checked name="Aerovias altas">
           <FeatureGroup>
