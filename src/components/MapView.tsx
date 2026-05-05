@@ -61,6 +61,20 @@ type Props = {
   onLimparSelecoes: () => void
 }
 
+type AreaImpactadaRotaManual = {
+  tipo: "FIXA" | "NOTAM" | "MANUAL"
+  chave: string
+  nome: string
+  detalhe: string
+}
+
+type Bounds = {
+  minLat: number
+  maxLat: number
+  minLon: number
+  maxLon: number
+}
+
 const COR_AEROVIA_ALTA = "#60a5fa"
 const COR_AEROVIA_BAIXA = "#34d399"
 const COR_AEROVIA_URUGUAY = "#f59e0b"
@@ -155,28 +169,18 @@ function parseAltitudeFeet(value?: string | null): number | null {
   if (raw === "SFC" || raw === "GND" || raw.includes("AGL")) return 0
 
   const flMatch = raw.match(/\bFL\s*(\d{2,3})\b/)
-  if (flMatch) {
-    return Number(flMatch[1]) * 100
-  }
+  if (flMatch) return Number(flMatch[1]) * 100
 
   const fMatch = raw.match(/\bF(\d{2,3})\b/)
-  if (fMatch) {
-    return Number(fMatch[1]) * 100
-  }
+  if (fMatch) return Number(fMatch[1]) * 100
 
   const ftMatch = raw.match(/\b(\d{4,6})\s*FT\b/)
-  if (ftMatch) {
-    return Number(ftMatch[1])
-  }
+  if (ftMatch) return Number(ftMatch[1])
 
   const plainNumber = raw.match(/\b(\d{3,6})\b/)
   if (plainNumber) {
     const valueNum = Number(plainNumber[1])
-
-    if (valueNum <= 999) {
-      return valueNum * 100
-    }
-
+    if (valueNum <= 999) return valueNum * 100
     return valueNum
   }
 
@@ -189,14 +193,8 @@ function isUpperLimitHigh(area: AreaNotamCsv): boolean {
 }
 
 function corNotam(area: AreaNotamCsv, notamsLidos?: Set<string>): string {
-  if (isNotamLido(area, notamsLidos)) {
-    return COR_TEMPORARIA_LIDA
-  }
-
-  if (isUpperLimitHigh(area)) {
-    return COR_NOTAM_ALTO
-  }
-
+  if (isNotamLido(area, notamsLidos)) return COR_TEMPORARIA_LIDA
+  if (isUpperLimitHigh(area)) return COR_NOTAM_ALTO
   return COR_TEMPORARIA
 }
 
@@ -267,9 +265,7 @@ function pointInPolygon(point: LatLon, polygon: LatLon[]): boolean {
   if (ring.length < 4) return false
 
   for (let i = 0; i < ring.length - 1; i++) {
-    if (pointOnSegment(point, ring[i], ring[i + 1])) {
-      return true
-    }
+    if (pointOnSegment(point, ring[i], ring[i + 1])) return true
   }
 
   const [py, px] = point
@@ -357,11 +353,90 @@ function segmentDistanceToPointMeters(a: LatLon, b: LatLon, p: LatLon): number {
   return distanceMeters(closest, p)
 }
 
+function boundsFromCoords(coords: LatLon[]): Bounds | null {
+  if (!coords.length) return null
+
+  let minLat = coords[0][0]
+  let maxLat = coords[0][0]
+  let minLon = coords[0][1]
+  let maxLon = coords[0][1]
+
+  for (const [lat, lon] of coords) {
+    minLat = Math.min(minLat, lat)
+    maxLat = Math.max(maxLat, lat)
+    minLon = Math.min(minLon, lon)
+    maxLon = Math.max(maxLon, lon)
+  }
+
+  return { minLat, maxLat, minLon, maxLon }
+}
+
+function boundsFromCircle(center: LatLon, radius_m: number): Bounds {
+  const latMargin = radius_m / 111320
+  const cosLat = Math.cos((center[0] * Math.PI) / 180)
+  const lonMargin = radius_m / (111320 * Math.max(0.01, Math.abs(cosLat)))
+
+  return {
+    minLat: center[0] - latMargin,
+    maxLat: center[0] + latMargin,
+    minLon: center[1] - lonMargin,
+    maxLon: center[1] + lonMargin
+  }
+}
+
+function expandBounds(bounds: Bounds, marginMeters: number): Bounds {
+  const latMargin = marginMeters / 111320
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2
+  const cosLat = Math.cos((centerLat * Math.PI) / 180)
+  const lonMargin = marginMeters / (111320 * Math.max(0.01, Math.abs(cosLat)))
+
+  return {
+    minLat: bounds.minLat - latMargin,
+    maxLat: bounds.maxLat + latMargin,
+    minLon: bounds.minLon - lonMargin,
+    maxLon: bounds.maxLon + lonMargin
+  }
+}
+
+function boundsOverlap(a: Bounds, b: Bounds): boolean {
+  return !(
+    a.maxLat < b.minLat ||
+    a.minLat > b.maxLat ||
+    a.maxLon < b.minLon ||
+    a.minLon > b.maxLon
+  )
+}
+
+function routeCouldHitPolygon(route: LatLon[], polygon: LatLon[]): boolean {
+  const routeBounds = boundsFromCoords(route)
+  const polygonBounds = boundsFromCoords(polygon)
+
+  if (!routeBounds || !polygonBounds) return false
+
+  return boundsOverlap(
+    expandBounds(routeBounds, 10000),
+    expandBounds(polygonBounds, 10000)
+  )
+}
+
+function routeCouldHitCircle(route: LatLon[], center: LatLon, radius_m: number): boolean {
+  const routeBounds = boundsFromCoords(route)
+  if (!routeBounds) return false
+
+  const circleBounds = boundsFromCircle(center, radius_m)
+
+  return boundsOverlap(
+    expandBounds(routeBounds, 10000),
+    expandBounds(circleBounds, 10000)
+  )
+}
+
 function lineIntersectsPolygon(route: LatLon[], polygon: LatLon[]): boolean {
   if (route.length < 2) return false
 
   const ring = closeRing(polygon)
   if (ring.length < 4) return false
+  if (!routeCouldHitPolygon(route, ring)) return false
 
   for (const point of route) {
     if (pointInPolygon(point, ring)) return true
@@ -384,6 +459,7 @@ function lineIntersectsPolygon(route: LatLon[], polygon: LatLon[]): boolean {
 
 function lineIntersectsCircle(route: LatLon[], center: LatLon, radius_m: number): boolean {
   if (route.length < 2) return false
+  if (!routeCouldHitCircle(route, center, radius_m)) return false
 
   for (const point of route) {
     if (pointInCircle(point, center, radius_m)) return true
@@ -552,7 +628,7 @@ function estiloAreaBase({
     weight: selecionada ? 3 : 1.5,
     opacity: selecionada ? 1 : 0.85,
     fillColor: selecionada ? COR_AREA_DESTACADA : cor,
-    fillOpacity: selecionada ? 0.22 : 0.12
+    fillOpacity: selecionada ? 0.24 : 0.12
   }
 }
 
@@ -627,8 +703,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-            .map((anel) => normalizeRing(anel))
-            .filter((anel) => anel.length >= 3)
+              .map((anel) => normalizeRing(anel))
+              .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -655,6 +731,83 @@ export function MapView(props: Props) {
   const rotasFiltradasPorImpacto = useMemo(() => {
     return rotasNormalizadas.filter((rota) => rotaCasaNoFiltro(rota, props.filtroImpacto))
   }, [rotasNormalizadas, props.filtroImpacto])
+
+  const manualRouteNormalizada = useMemo(() => {
+    if (!props.manualRoute) return null
+
+    const coords = normalizeLine(props.manualRoute.coords_latlon)
+    if (coords.length < 2) return null
+
+    return {
+      ...props.manualRoute,
+      coords_latlon: coords
+    }
+  }, [props.manualRoute])
+
+  const areasImpactadasRotaManual = useMemo<AreaImpactadaRotaManual[]>(() => {
+    if (!manualRouteNormalizada) return []
+
+    const route = manualRouteNormalizada.coords_latlon
+    const result: AreaImpactadaRotaManual[] = []
+
+    areasFixasNormalizadas.forEach((area) => {
+      const impactada = area.coords_latlon.some((anel) =>
+        lineIntersectsPolygon(route, anel)
+      )
+
+      if (impactada) {
+        result.push({
+          tipo: "FIXA",
+          chave: areaFixaKey(area),
+          nome: area.nome,
+          detalhe: area.area_type || area.fir_match || "-"
+        })
+      }
+    })
+
+    areasNotamNormalizadas.forEach((area) => {
+      const impactada = hasCircleGeometry(area)
+        ? lineIntersectsCircle(route, area.center, area.radius_m)
+        : lineIntersectsPolygon(route, area.coords_latlon)
+
+      if (impactada) {
+        result.push({
+          tipo: "NOTAM",
+          chave: areaNotamKey(area),
+          nome: area.nome,
+          detalhe: area.numero_notam || area.fir_match || "-"
+        })
+      }
+    })
+
+    areasTemporariasNormalizadas.forEach((area) => {
+      const impactada = lineIntersectsPolygon(route, area.coords_latlon)
+
+      if (impactada) {
+        result.push({
+          tipo: "MANUAL",
+          chave: areaManualKey(area),
+          nome: area.nome,
+          detalhe: "Área manual"
+        })
+      }
+    })
+
+    return result
+  }, [
+    manualRouteNormalizada,
+    areasFixasNormalizadas,
+    areasNotamNormalizadas,
+    areasTemporariasNormalizadas
+  ])
+
+  const notamsImpactandoRotaManual = useMemo(() => {
+    return areasImpactadasRotaManual.filter((area) => area.tipo === "NOTAM")
+  }, [areasImpactadasRotaManual])
+
+  const chavesAreasImpactadasRotaManual = useMemo(() => {
+    return new Set(areasImpactadasRotaManual.map((area) => area.chave))
+  }, [areasImpactadasRotaManual])
 
   const rotaSelecionadaNormalizada = useMemo(() => {
     if (!props.rotaSelecionada) return null
@@ -758,9 +911,9 @@ export function MapView(props: Props) {
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-      ]
+          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+        ]
       : [-15, -55]
 
   const aeroviasAltaNormalizadas = useMemo(() => {
@@ -810,6 +963,61 @@ export function MapView(props: Props) {
         areaNotam={areaMapaNotamSelecionada}
         areaFixa={areaMapaFixaSelecionada}
       />
+
+      {manualRouteNormalizada && (
+        <div
+          style={{
+            position: "absolute",
+            top: 72,
+            right: 16,
+            zIndex: 1000,
+            width: 360,
+            maxHeight: 520,
+            overflowY: "auto",
+            background: "rgba(15, 23, 42, 0.97)",
+            border: "1px solid #334155",
+            borderRadius: 12,
+            padding: 12,
+            color: "#e5e7eb",
+            boxShadow: "0 18px 45px rgba(0,0,0,0.5)"
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 6 }}>
+            Áreas impactando a rota manual
+          </div>
+
+          <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 10 }}>
+            Total: {areasImpactadasRotaManual.length} | NOTAMs: {notamsImpactandoRotaManual.length}
+          </div>
+
+          {areasImpactadasRotaManual.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#94a3b8" }}>
+              Nenhuma área impactando.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {areasImpactadasRotaManual.map((area) => (
+                <div
+                  key={`${area.tipo}-${area.chave}`}
+                  style={{
+                    border: area.tipo === "NOTAM" ? "1px solid #facc15" : "1px solid #475569",
+                    borderRadius: 10,
+                    padding: 10,
+                    background: "rgba(30, 41, 59, 0.92)"
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: area.tipo === "NOTAM" ? "#facc15" : "#e5e7eb" }}>
+                    {area.tipo} | {area.detalhe}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#cbd5e1", marginTop: 3 }}>
+                    {area.nome}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <LayersControl position="topleft">
         <LayersControl.BaseLayer checked name="Escuro">
@@ -1053,29 +1261,45 @@ export function MapView(props: Props) {
           </LayersControl.Overlay>
         )}
 
-        {props.manualRoute && props.manualRoute.coords_latlon.length >= 2 && (
+        {manualRouteNormalizada && manualRouteNormalizada.coords_latlon.length >= 2 && (
           <LayersControl.Overlay checked name="Rota manual">
             <FeatureGroup>
               <Polyline
-                positions={props.manualRoute.coords_latlon}
+                positions={manualRouteNormalizada.coords_latlon}
                 pathOptions={{
-                  color: COR_ROTA_MANUAL,
+                  color: areasImpactadasRotaManual.length > 0 ? COR_ROTA_IMPACTADA : COR_ROTA_MANUAL,
                   weight: 4,
                   opacity: 1
                 }}
               >
                 <Popup>
                   <div>
-                    <div><strong>Origem:</strong> {props.manualRoute.origem}</div>
-                    <div><strong>Destino:</strong> {props.manualRoute.destino}</div>
-                    <div><strong>Rota:</strong> {props.manualRoute.rota}</div>
-                    <div><strong>Distância:</strong> {props.manualRoute.distancia_total_nm} NM</div>
-                    <div><strong>Pontos:</strong> {props.manualRoute.pontos_resolvidos.join(" → ")}</div>
+                    <div><strong>Origem:</strong> {manualRouteNormalizada.origem}</div>
+                    <div><strong>Destino:</strong> {manualRouteNormalizada.destino}</div>
+                    <div><strong>Rota:</strong> {manualRouteNormalizada.rota}</div>
+                    <div><strong>Distância:</strong> {manualRouteNormalizada.distancia_total_nm} NM</div>
+                    <div><strong>Pontos:</strong> {manualRouteNormalizada.pontos_resolvidos.join(" → ")}</div>
+                    <hr />
+                    <div><strong>Áreas impactadas:</strong> {areasImpactadasRotaManual.length}</div>
+                    {areasImpactadasRotaManual.length > 0 ? (
+                      <ul style={{ paddingLeft: 16, marginTop: 6 }}>
+                        {areasImpactadasRotaManual.map((area) => (
+                          <li key={`${area.tipo}-${area.chave}`}>
+                            <strong>{area.tipo}</strong> | {area.nome} | {area.detalhe}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div>Nenhuma área impactada.</div>
+                    )}
                   </div>
                 </Popup>
 
                 <Tooltip sticky>
-                  {props.manualRoute.origem} → {props.manualRoute.destino}
+                  {manualRouteNormalizada.origem} → {manualRouteNormalizada.destino}
+                  {areasImpactadasRotaManual.length > 0
+                    ? ` | ${areasImpactadasRotaManual.length} área(s) impactada(s)`
+                    : ""}
                 </Tooltip>
               </Polyline>
             </FeatureGroup>
@@ -1147,9 +1371,11 @@ export function MapView(props: Props) {
                     props.areaMapaSelecionada?.tipo === "FIXA" &&
                     props.areaMapaSelecionada.chave === areaFixaKey(area)
 
+                  const impactadaRotaManual = chavesAreasImpactadasRotaManual.has(areaFixaKey(area))
+
                   const style = estiloAreaBase({
                     cor: corAreaPorTipo(area.area_type),
-                    selecionada: selecionadaNoMapa
+                    selecionada: selecionadaNoMapa || impactadaRotaManual
                   })
 
                   return (
@@ -1176,9 +1402,15 @@ export function MapView(props: Props) {
                           <div><strong>Nome:</strong> {area.nome}</div>
                           <div><strong>Tipo:</strong> {area.area_type || "-"}</div>
                           <div><strong>FIR:</strong> {area.fir_match || "-"}</div>
+                          {impactadaRotaManual && (
+                            <div><strong>Impacta rota manual:</strong> SIM</div>
+                          )}
                         </div>
                       </Popup>
-                      <Tooltip sticky>{area.nome}</Tooltip>
+                      <Tooltip sticky>
+                        {area.nome}
+                        {impactadaRotaManual ? " | Impacta rota manual" : ""}
+                      </Tooltip>
                     </Polygon>
                   )
                 })
@@ -1195,9 +1427,11 @@ export function MapView(props: Props) {
                   props.areaMapaSelecionada?.tipo === "NOTAM" &&
                   props.areaMapaSelecionada.chave === areaNotamKey(area)
 
+                const impactadaRotaManual = chavesAreasImpactadasRotaManual.has(areaNotamKey(area))
+
                 const style = estiloAreaBase({
                   cor: corNotam(area, props.notamsLidos),
-                  selecionada: selecionadaNoMapa
+                  selecionada: selecionadaNoMapa || impactadaRotaManual
                 })
 
                 if (hasCircleGeometry(area)) {
@@ -1229,6 +1463,9 @@ export function MapView(props: Props) {
                           <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                           <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
                           <div><strong>Faixa alta:</strong> {isUpperLimitHigh(area) ? "SIM" : "NÃO"}</div>
+                          {impactadaRotaManual && (
+                            <div><strong>Impacta rota manual:</strong> SIM</div>
+                          )}
                           <div
                             dangerouslySetInnerHTML={{
                               __html: formatarTextoNotam(area)
@@ -1236,7 +1473,10 @@ export function MapView(props: Props) {
                           />
                         </div>
                       </Popup>
-                      <Tooltip sticky>{area.nome}</Tooltip>
+                      <Tooltip sticky>
+                        {area.nome}
+                        {impactadaRotaManual ? " | Impacta rota manual" : ""}
+                      </Tooltip>
                     </Circle>
                   )
                 }
@@ -1268,6 +1508,9 @@ export function MapView(props: Props) {
                         <div><strong>Início:</strong> {area.valid_from || "-"}</div>
                         <div><strong>Fim:</strong> {area.valid_to || "-"}</div>
                         <div><strong>Faixa alta:</strong> {isUpperLimitHigh(area) ? "SIM" : "NÃO"}</div>
+                        {impactadaRotaManual && (
+                          <div><strong>Impacta rota manual:</strong> SIM</div>
+                        )}
                         <div
                           dangerouslySetInnerHTML={{
                             __html: formatarTextoNotam(area)
@@ -1275,7 +1518,10 @@ export function MapView(props: Props) {
                         />
                       </div>
                     </Popup>
-                    <Tooltip sticky>{area.nome}</Tooltip>
+                    <Tooltip sticky>
+                      {area.nome}
+                      {impactadaRotaManual ? " | Impacta rota manual" : ""}
+                    </Tooltip>
                   </Polygon>
                 )
               })}
@@ -1291,16 +1537,19 @@ export function MapView(props: Props) {
                   props.areaMapaSelecionada?.tipo === "MANUAL" &&
                   props.areaMapaSelecionada.chave === areaManualKey(area)
 
+                const impactadaRotaManual = chavesAreasImpactadasRotaManual.has(areaManualKey(area))
+                const destacada = selecionadaNoMapa || impactadaRotaManual
+
                 return (
                   <Polygon
                     key={`${area.nome}-${index}`}
                     positions={area.coords_latlon}
                     pathOptions={{
-                      color: selecionadaNoMapa ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
-                      weight: selecionadaNoMapa ? 3 : 1.5,
+                      color: destacada ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
+                      weight: destacada ? 3 : 1.5,
                       opacity: 1,
-                      fillColor: selecionadaNoMapa ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
-                      fillOpacity: 0.2
+                      fillColor: destacada ? COR_TEMPORARIA_SELECIONADA : COR_TEMPORARIA,
+                      fillOpacity: destacada ? 0.28 : 0.2
                     }}
                     eventHandlers={{
                       click: (e) => {
@@ -1319,9 +1568,15 @@ export function MapView(props: Props) {
                     <Popup>
                       <div>
                         <div><strong>Nome:</strong> {area.nome}</div>
+                        {impactadaRotaManual && (
+                          <div><strong>Impacta rota manual:</strong> SIM</div>
+                        )}
                       </div>
                     </Popup>
-                    <Tooltip sticky>{area.nome}</Tooltip>
+                    <Tooltip sticky>
+                      {area.nome}
+                      {impactadaRotaManual ? " | Impacta rota manual" : ""}
+                    </Tooltip>
                   </Polygon>
                 )
               })}
