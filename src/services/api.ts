@@ -865,3 +865,53 @@ export async function getWaypoints(): Promise<Waypoint[]> {
   const data = await request<Waypoint[]>("/api/notams/waypoints")
   return Array.isArray(data) ? data : []
 }
+
+export type ManualRouteSegment = {
+  type: "DCT" | "AIRWAY"
+  from: string
+  to: string
+  airway?: string
+  coords_latlon: LatLon[]
+}
+
+export type ManualRouteResponse = {
+  origem: string
+  destino: string
+  rota: string
+  coords_latlon: LatLon[]
+  pontos_resolvidos: string[]
+  segmentos: ManualRouteSegment[]
+  distancia_total_nm: number
+}
+
+export async function postManualRoute(payload: {
+  origem: string
+  destino: string
+  rota: string
+}): Promise<ManualRouteResponse> {
+  return request<ManualRouteResponse>("/api/notams/manual-route", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  })
+}
+
+export type NavaidType =
+  | "VOR"
+  | "DVOR"
+  | "VOR_DME"
+  | "DVOR_DME"
+  | "NDB"
+
+export type Navaid = {
+  ident: string
+  latitude: number
+  longitude: number
+  type: NavaidType
+  name?: string
+  frequency?: string
+}
+
+export async function getNavaids(): Promise<Navaid[]> {
+  const data = await request<Navaid[]>("/api/notams/navaids")
+  return Array.isArray(data) ? data : []
+}

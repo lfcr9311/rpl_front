@@ -10,7 +10,14 @@ import { useBootstrapData } from "./hooks/useBootstrapData"
 import { useRouteSelection } from "./hooks/useRouteSelection"
 import { useAreaSelection } from "./hooks/useAreaSelection"
 import { useManualTemporaryAreas } from "./hooks/useManualTemporaryAreas"
-import { getWaypoints, type Waypoint } from "./services/api"
+import {
+  getNavaids,
+  getWaypoints,
+  postManualRoute,
+  type ManualRouteResponse,
+  type Navaid,
+  type Waypoint
+} from "./services/api"
 import type { AreaMapaSelecionada } from "./app/types"
 import type { AreaNotamCsv, FiltroImpacto, RotaAnalisada } from "./types"
 import { areaNotamKey, rotaKey } from "./app/keys"
@@ -30,6 +37,10 @@ export default function App() {
   const [rotasImpactadasPelaArea, setRotasImpactadasPelaArea] = useState<RotaAnalisada[]>([])
   const [mostrarSidebarNotam, setMostrarSidebarNotam] = useState(false)
   const [waypoints, setWaypoints] = useState<Waypoint[]>([])
+  const [navaids, setNavaids] = useState<Navaid[]>([])
+  const [manualRoute, setManualRoute] = useState<ManualRouteResponse | null>(null)
+  const [manualRouteLoading, setManualRouteLoading] = useState(false)
+  const [manualRouteError, setManualRouteError] = useState("")
 
   useEffect(() => {
     let mounted = true
@@ -52,6 +63,33 @@ export default function App() {
     }
 
     void carregarWaypoints()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function carregarNavaids() {
+      try {
+        const result = await getNavaids()
+
+        if (!mounted) return
+
+        setNavaids(Array.isArray(result) ? result : [])
+        console.log("Navaids carregados:", Array.isArray(result) ? result.length : 0)
+      } catch (err) {
+        console.error("Erro ao carregar navaids:", err)
+
+        if (!mounted) return
+
+        setNavaids([])
+      }
+    }
+
+    void carregarNavaids()
 
     return () => {
       mounted = false
@@ -134,6 +172,33 @@ export default function App() {
     })
   }, [rotasTodas, filtroImpacto])
 
+  const gerarRotaManual = useCallback(async (payload: {
+    origem: string
+    destino: string
+    rota: string
+  }) => {
+    try {
+      setManualRouteLoading(true)
+      setManualRouteError("")
+
+      const result = await postManualRoute(payload)
+
+      setManualRoute(result)
+      setRotaSelecionadaKey(null)
+      setAreaMapaSelecionada(null)
+      setRotasImpactadasPelaArea([])
+    } catch (err) {
+      setManualRouteError(err instanceof Error ? err.message : "Erro ao gerar rota manual")
+    } finally {
+      setManualRouteLoading(false)
+    }
+  }, [])
+
+  const limparRotaManual = useCallback(() => {
+    setManualRoute(null)
+    setManualRouteError("")
+  }, [])
+
   if (!data && loading) {
     return <LoadingScreen />
   }
@@ -174,6 +239,11 @@ export default function App() {
         onLimpar={limparAreasTemporarias}
         loading={loading}
         error={error}
+        manualRoute={manualRoute}
+        manualRouteLoading={manualRouteLoading}
+        manualRouteError={manualRouteError}
+        onGerarRotaManual={gerarRotaManual}
+        onLimparRotaManual={limparRotaManual}
       />
 
       <main className={`content ${rotaSelecionada || areaMapaSelecionada ? "with-route-panel" : ""}`}>
@@ -198,6 +268,8 @@ export default function App() {
         <MapView
           aeroportos={data.aeroportos}
           waypoints={waypoints}
+          navaids={navaids}
+          manualRoute={manualRoute}
           areasFixas={data.areas_fixas}
           areasNotamCsv={data.areas_notam_csv}
           areasTemporarias={areasTemporarias}

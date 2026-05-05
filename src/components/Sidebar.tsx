@@ -5,6 +5,7 @@ import type {
   FiltroImpacto,
   RotaAnalisada
 } from "../types"
+import type { ManualRouteResponse } from "../services/api"
 import { buildAreaLabel, formatarHora } from "../services/api"
 
 type Props = {
@@ -33,6 +34,15 @@ type Props = {
   onLimpar: () => void
   loading: boolean
   error: string
+  manualRoute: ManualRouteResponse | null
+  manualRouteLoading: boolean
+  manualRouteError: string
+  onGerarRotaManual: (payload: {
+    origem: string
+    destino: string
+    rota: string
+  }) => void
+  onLimparRotaManual: () => void
 }
 
 export function rotaKey(rota: RotaAnalisada) {
@@ -55,6 +65,106 @@ function Header() {
         <p className="app-subtitle">Áreas, NOTAM e rotas</p>
       </div>
     </div>
+  )
+}
+
+function ManualRouteSection(props: Props) {
+  const [open, setOpen] = useState(true)
+  const [origem, setOrigem] = useState("SBGR")
+  const [destino, setDestino] = useState("SBRF")
+  const [rota, setRota] = useState("NIBRU UZ171 KEVUN")
+
+  function submit() {
+    props.onGerarRotaManual({
+      origem: origem.trim().toUpperCase(),
+      destino: destino.trim().toUpperCase(),
+      rota: rota.trim().toUpperCase()
+    })
+  }
+
+  return (
+    <SectionCard title="Rota manual">
+      <button
+        type="button"
+        className="section-collapse-btn"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{open ? "Fechar" : "Abrir"}</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open ? (
+        <>
+          <label className="label">Origem</label>
+          <input
+            className="input"
+            value={origem}
+            onChange={(e) => setOrigem(e.target.value.toUpperCase())}
+            placeholder="SBGR"
+          />
+
+          <label className="label">Destino</label>
+          <input
+            className="input"
+            value={destino}
+            onChange={(e) => setDestino(e.target.value.toUpperCase())}
+            placeholder="SBRF"
+          />
+
+          <label className="label">Rota</label>
+          <textarea
+            className="textarea"
+            value={rota}
+            onChange={(e) => setRota(e.target.value.toUpperCase())}
+            placeholder="NIBRU UZ171 KEVUN"
+          />
+
+          <div className="button-group">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={submit}
+              disabled={props.manualRouteLoading}
+            >
+              {props.manualRouteLoading ? "Gerando..." : "Gerar rota"}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={props.onLimparRotaManual}
+              disabled={props.manualRouteLoading || !props.manualRoute}
+            >
+              Limpar rota
+            </button>
+          </div>
+
+          {props.manualRouteError ? (
+            <div className="alert alert-error">{props.manualRouteError}</div>
+          ) : null}
+
+          {props.manualRoute ? (
+            <div className="collapsed-summary">
+              <div className="collapsed-summary-line">
+                Pontos: <strong>{props.manualRoute.coords_latlon.length}</strong>
+              </div>
+              <div className="collapsed-summary-line">
+                Distância: <strong>{props.manualRoute.distancia_total_nm} NM</strong>
+              </div>
+              <div className="collapsed-summary-line">
+                Resolvido: <strong>{props.manualRoute.pontos_resolvidos.join(" → ")}</strong>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="collapsed-summary">
+          <div className="collapsed-summary-line">
+            Rota: <strong>{props.manualRoute?.rota || "-"}</strong>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   )
 }
 
@@ -321,6 +431,8 @@ export function Sidebar(props: Props) {
   return (
     <aside className={`sidebar ${props.isOpen ? "" : "hidden"}`}>
       <Header />
+
+      <ManualRouteSection {...props} />
 
       <ManualAreaSection {...props} />
 

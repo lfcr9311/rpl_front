@@ -14,8 +14,14 @@ import {
 } from "react-leaflet"
 import L from "leaflet"
 import { useEffect, useMemo, useState } from "react"
-import { getFirs, type FirArea } from "../services/api"
-import type { Waypoint } from "../services/api"
+import {
+  getFirs,
+  type FirArea,
+  type ManualRouteResponse,
+  type Navaid,
+  type NavaidType,
+  type Waypoint
+} from "../services/api"
 import type {
   Airport,
   AreaFixa,
@@ -25,11 +31,12 @@ import type {
   LatLon,
   FiltroImpacto
 } from "../types"
-import { AreaMapaSelecionada } from "../app/types"
+import type { AreaMapaSelecionada } from "../app/types"
 
 type Props = {
   aeroportos: Airport[]
   waypoints: Waypoint[]
+  navaids: Navaid[]
   areasFixas: AreaFixa[]
   areasNotamCsv: AreaNotamCsv[]
   areasTemporarias: AreaTemporaria[]
@@ -41,6 +48,7 @@ type Props = {
   mostrarNotamCsv: boolean
   mostrarTemporarias: boolean
   areaSelecionada: string | null
+  manualRoute: ManualRouteResponse | null
   areaMapaSelecionada: AreaMapaSelecionada
   filtroImpacto: FiltroImpacto
   rotaSelecionada: RotaAnalisada | null
@@ -57,10 +65,16 @@ const COR_AEROVIA_ALTA = "#60a5fa"
 const COR_AEROVIA_BAIXA = "#34d399"
 const COR_AEROVIA_URUGUAY = "#f59e0b"
 const COR_WAYPOINT = "#22c55e"
+const COR_VOR = "#60a5fa"
+const COR_DVOR = "#38bdf8"
+const COR_VOR_DME = "#22c55e"
+const COR_DVOR_DME = "#16a34a"
+const COR_NDB = "#f59e0b"
 const COR_AEROPORTO = "#ef4444"
 const COR_ROTA_BASE = "#60a5fa"
 const COR_ROTA_IMPACTADA = "#fb923c"
 const COR_ROTA_SELECIONADA = "#ffffff"
+const COR_ROTA_MANUAL = "#eab308"
 const COR_AREA_RESTRICTED = "#f59e0b"
 const COR_AREA_PROHIBITED = "#ef4444"
 const COR_AREA_DANGER = "#a855f7"
@@ -72,6 +86,18 @@ const COR_AREA_DESTACADA = "#fde047"
 const COR_AEROVIA_HOVER = "#ffffff"
 const COR_FIR = "#ffffff"
 const COR_NOTAM_ALTO = "#f43f5e"
+
+function corNavaid(type: NavaidType): string {
+  if (type === "DVOR") return COR_DVOR
+  if (type === "VOR_DME") return COR_VOR_DME
+  if (type === "DVOR_DME") return COR_DVOR_DME
+  if (type === "NDB") return COR_NDB
+  return COR_VOR
+}
+
+function isVorType(type: NavaidType): boolean {
+  return type === "VOR" || type === "DVOR" || type === "VOR_DME" || type === "DVOR_DME"
+}
 
 function isValidCoord(point: unknown): point is LatLon {
   return (
@@ -556,6 +582,35 @@ export function MapView(props: Props) {
     }
   }, [])
 
+  const navaidsNormalizados = useMemo(() => {
+    return props.navaids
+      .map((navaid) => ({
+        ident: String(navaid.ident ?? "").trim().toUpperCase(),
+        latitude: Number(navaid.latitude),
+        longitude: Number(navaid.longitude),
+        type: navaid.type,
+        name: navaid.name,
+        frequency: navaid.frequency
+      }))
+      .filter((navaid) => {
+        return (
+          navaid.ident &&
+          Number.isFinite(navaid.latitude) &&
+          Number.isFinite(navaid.longitude) &&
+          Math.abs(navaid.latitude) <= 90 &&
+          Math.abs(navaid.longitude) <= 180
+        )
+      })
+  }, [props.navaids])
+
+  const navaidsVor = useMemo(() => {
+    return navaidsNormalizados.filter((navaid) => isVorType(navaid.type))
+  }, [navaidsNormalizados])
+
+  const navaidsNdb = useMemo(() => {
+    return navaidsNormalizados.filter((navaid) => navaid.type === "NDB")
+  }, [navaidsNormalizados])
+
   const selectedAreaManualSidebar =
     props.areasTemporarias.find((a) => a.nome === props.areaSelecionada) ?? null
 
@@ -572,8 +627,8 @@ export function MapView(props: Props) {
         ...area,
         coords_latlon: Array.isArray(area.coords_latlon)
           ? area.coords_latlon
-              .map((anel) => normalizeRing(anel))
-              .filter((anel) => anel.length >= 3)
+            .map((anel) => normalizeRing(anel))
+            .filter((anel) => anel.length >= 3)
           : []
       }))
       .filter((area) => area.coords_latlon.length > 0)
@@ -703,9 +758,9 @@ export function MapView(props: Props) {
   const center: LatLon =
     props.aeroportos.length > 0
       ? [
-          props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
-          props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
-        ]
+        props.aeroportos.reduce((acc, a) => acc + a.latitude, 0) / props.aeroportos.length,
+        props.aeroportos.reduce((acc, a) => acc + a.longitude, 0) / props.aeroportos.length
+      ]
       : [-15, -55]
 
   const aeroviasAltaNormalizadas = useMemo(() => {
@@ -920,6 +975,113 @@ export function MapView(props: Props) {
           </LayersControl.Overlay>
         )}
 
+        {navaidsVor.length > 0 && (
+          <LayersControl.Overlay checked name={`VOR (${navaidsVor.length})`}>
+            <FeatureGroup>
+              {navaidsVor.map((navaid, index) => {
+                const color = corNavaid(navaid.type)
+
+                return (
+                  <CircleMarker
+                    key={`vor-${navaid.type}-${navaid.ident}-${index}`}
+                    center={[navaid.latitude, navaid.longitude]}
+                    radius={3}
+                    pathOptions={{
+                      color,
+                      fillColor: color,
+                      fillOpacity: 0.9,
+                      weight: 1
+                    }}
+                  >
+                    <Tooltip sticky>
+                      {navaid.ident} | {navaid.type}
+                    </Tooltip>
+
+                    <Popup>
+                      <div>
+                        <div><strong>Ident:</strong> {navaid.ident}</div>
+                        <div><strong>Tipo:</strong> {navaid.type}</div>
+                        {navaid.name ? <div><strong>Nome:</strong> {navaid.name}</div> : null}
+                        {navaid.frequency ? <div><strong>Frequência:</strong> {navaid.frequency}</div> : null}
+                        <div><strong>Latitude:</strong> {navaid.latitude}</div>
+                        <div><strong>Longitude:</strong> {navaid.longitude}</div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                )
+              })}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
+        {navaidsNdb.length > 0 && (
+          <LayersControl.Overlay checked name={`NDB (${navaidsNdb.length})`}>
+            <FeatureGroup>
+              {navaidsNdb.map((navaid, index) => {
+                const color = corNavaid(navaid.type)
+
+                return (
+                  <CircleMarker
+                    key={`ndb-${navaid.type}-${navaid.ident}-${index}`}
+                    center={[navaid.latitude, navaid.longitude]}
+                    radius={3}
+                    pathOptions={{
+                      color,
+                      fillColor: color,
+                      fillOpacity: 0.9,
+                      weight: 1
+                    }}
+                  >
+                    <Tooltip sticky>
+                      {navaid.ident} | {navaid.type}
+                    </Tooltip>
+
+                    <Popup>
+                      <div>
+                        <div><strong>Ident:</strong> {navaid.ident}</div>
+                        <div><strong>Tipo:</strong> {navaid.type}</div>
+                        {navaid.name ? <div><strong>Nome:</strong> {navaid.name}</div> : null}
+                        {navaid.frequency ? <div><strong>Frequência:</strong> {navaid.frequency}</div> : null}
+                        <div><strong>Latitude:</strong> {navaid.latitude}</div>
+                        <div><strong>Longitude:</strong> {navaid.longitude}</div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                )
+              })}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
+        {props.manualRoute && props.manualRoute.coords_latlon.length >= 2 && (
+          <LayersControl.Overlay checked name="Rota manual">
+            <FeatureGroup>
+              <Polyline
+                positions={props.manualRoute.coords_latlon}
+                pathOptions={{
+                  color: COR_ROTA_MANUAL,
+                  weight: 4,
+                  opacity: 1
+                }}
+              >
+                <Popup>
+                  <div>
+                    <div><strong>Origem:</strong> {props.manualRoute.origem}</div>
+                    <div><strong>Destino:</strong> {props.manualRoute.destino}</div>
+                    <div><strong>Rota:</strong> {props.manualRoute.rota}</div>
+                    <div><strong>Distância:</strong> {props.manualRoute.distancia_total_nm} NM</div>
+                    <div><strong>Pontos:</strong> {props.manualRoute.pontos_resolvidos.join(" → ")}</div>
+                  </div>
+                </Popup>
+
+                <Tooltip sticky>
+                  {props.manualRoute.origem} → {props.manualRoute.destino}
+                </Tooltip>
+              </Polyline>
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
         <LayersControl.Overlay checked name="Rotas">
           <FeatureGroup>
             {rotasFiltradasPorImpacto.map((rota) => {
@@ -953,11 +1115,7 @@ export function MapView(props: Props) {
                 <Polyline
                   key={key}
                   positions={rota.coords_latlon}
-                  pathOptions={{
-                    color,
-                    weight,
-                    opacity
-                  }}
+                  pathOptions={{ color, weight, opacity }}
                   eventHandlers={{
                     click: (e) => {
                       L.DomEvent.stopPropagation(e)
