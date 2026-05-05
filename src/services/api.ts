@@ -28,6 +28,12 @@ export type FirArea = {
   coords_latlon: LatLon[]
 }
 
+export type Waypoint = {
+  ident: string
+  latitude: number
+  longitude: number
+}
+
 type Bounds = {
   minLat: number
   maxLat: number
@@ -853,4 +859,9 @@ export function parseCoordsInput(input: string): LatLon[] {
   }
 
   return coords
+}
+
+export async function getWaypoints(): Promise<Waypoint[]> {
+  const data = await request<Waypoint[]>("/api/notams/waypoints")
+  return Array.isArray(data) ? data : []
 }

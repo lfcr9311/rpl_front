@@ -15,9 +15,9 @@ import {
 import L from "leaflet"
 import { useEffect, useMemo, useState } from "react"
 import { getFirs, type FirArea } from "../services/api"
+import type { Waypoint } from "../services/api"
 import type {
   Airport,
-  Waypoint,
   AreaFixa,
   AreaNotamCsv,
   AreaTemporaria,
@@ -25,7 +25,7 @@ import type {
   LatLon,
   FiltroImpacto
 } from "../types"
-import type { AreaMapaSelecionada } from "../App"
+import { AreaMapaSelecionada } from "../app/types"
 
 type Props = {
   aeroportos: Airport[]

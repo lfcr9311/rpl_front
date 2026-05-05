@@ -10,6 +10,7 @@ import { useBootstrapData } from "./hooks/useBootstrapData"
 import { useRouteSelection } from "./hooks/useRouteSelection"
 import { useAreaSelection } from "./hooks/useAreaSelection"
 import { useManualTemporaryAreas } from "./hooks/useManualTemporaryAreas"
+import { getWaypoints, type Waypoint } from "./services/api"
 import type { AreaMapaSelecionada } from "./app/types"
 import type { AreaNotamCsv, FiltroImpacto, RotaAnalisada } from "./types"
 import { areaNotamKey, rotaKey } from "./app/keys"
@@ -28,6 +29,34 @@ export default function App() {
   const [areaMapaSelecionada, setAreaMapaSelecionada] = useState<AreaMapaSelecionada>(null)
   const [rotasImpactadasPelaArea, setRotasImpactadasPelaArea] = useState<RotaAnalisada[]>([])
   const [mostrarSidebarNotam, setMostrarSidebarNotam] = useState(false)
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function carregarWaypoints() {
+      try {
+        const result = await getWaypoints()
+
+        if (!mounted) return
+
+        setWaypoints(Array.isArray(result) ? result : [])
+        console.log("Waypoints carregados:", Array.isArray(result) ? result.length : 0)
+      } catch (err) {
+        console.error("Erro ao carregar waypoints:", err)
+
+        if (!mounted) return
+
+        setWaypoints([])
+      }
+    }
+
+    void carregarWaypoints()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const rotasTodas = useMemo(() => {
     return data?.rotas_analisadas ?? []
@@ -168,7 +197,7 @@ export default function App() {
 
         <MapView
           aeroportos={data.aeroportos}
-          waypoints={data.waypoints}
+          waypoints={waypoints}
           areasFixas={data.areas_fixas}
           areasNotamCsv={data.areas_notam_csv}
           areasTemporarias={areasTemporarias}
