@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useState } from "react"
 import type { AreaNotamCsv } from "../types"
-import type { AreaMapaSelecionada } from "../App"
 import { Filter, Search, X, BellRing } from "lucide-react"
 import { getNotamReadStates, setNotamReadState } from "../services/api"
+import { AreaMapaSelecionada } from "../app/types"
 
 type FilterType = "TODOS" | "VISTO" | "NAO_VISTO"
 
