@@ -6,6 +6,15 @@ import { AreaMapaSelecionada } from "../app/types"
 
 type FilterType = "TODOS" | "VISTO" | "NAO_VISTO"
 
+type ReadStateApiItem = {
+  sourceId?: string | null
+  source_id?: string | null
+  numeroNotam?: string | null
+  numero_notam?: string | null
+  fir?: string | null
+  lido: boolean
+}
+
 type Props = {
   notams?: AreaNotamCsv[]
   areaMapaSelecionada: AreaMapaSelecionada
@@ -22,32 +31,54 @@ function normalizarValor(valor: unknown) {
   return String(valor ?? "").trim()
 }
 
-function buildReadKey(area: AreaNotamCsv) {
-  const sourceId = normalizarValor(area.source_id)
-  const numeroNotam = normalizarTexto(area.numero_notam)
-  const fir = normalizarTexto(area.fir_match)
-
-  if (sourceId) {
-    return `SRC::${sourceId}`
-  }
-
-  return `ALT::${numeroNotam}::${fir}`
+function getSourceIdFromArea(area: AreaNotamCsv) {
+  return normalizarValor(area.source_id)
 }
 
-function buildReadKeyFromState(item: {
-  sourceId?: string | null
-  numeroNotam?: string | null
-  fir?: string | null
-}) {
-  const sourceId = normalizarValor(item.sourceId)
-  const numeroNotam = normalizarTexto(item.numeroNotam)
-  const fir = normalizarTexto(item.fir)
+function getNumeroFromArea(area: AreaNotamCsv) {
+  return normalizarTexto(area.numero_notam || area.nome)
+}
+
+function getFirFromArea(area: AreaNotamCsv) {
+  return normalizarTexto(area.fir_match)
+}
+
+function buildReadKeys(area: AreaNotamCsv) {
+  const sourceId = getSourceIdFromArea(area)
+  const numeroNotam = getNumeroFromArea(area)
+  const fir = getFirFromArea(area)
+
+  const keys = new Set<string>()
 
   if (sourceId) {
-    return `SRC::${sourceId}`
+    keys.add(`SRC::${sourceId}`)
   }
 
-  return `ALT::${numeroNotam}::${fir}`
+  if (numeroNotam) {
+    keys.add(`ALT::${numeroNotam}::${fir}`)
+    keys.add(`NUM::${numeroNotam}`)
+  }
+
+  return keys
+}
+
+function buildReadKeysFromState(item: ReadStateApiItem) {
+  const sourceId = normalizarValor(item.sourceId ?? item.source_id)
+  const numeroNotam = normalizarTexto(item.numeroNotam ?? item.numero_notam)
+  const fir = normalizarTexto(item.fir)
+
+  const keys = new Set<string>()
+
+  if (sourceId) {
+    keys.add(`SRC::${sourceId}`)
+  }
+
+  if (numeroNotam) {
+    keys.add(`ALT::${numeroNotam}::${fir}`)
+    keys.add(`NUM::${numeroNotam}`)
+  }
+
+  return keys
 }
 
 function areaNotamKeySidebar(area: AreaNotamCsv) {
@@ -55,8 +86,15 @@ function areaNotamKeySidebar(area: AreaNotamCsv) {
 }
 
 function isMarcadoNotam(area: AreaNotamCsv, marcados: Set<string>) {
-  if (area.lido) return true
-  return marcados.has(buildReadKey(area))
+  const keys = buildReadKeys(area)
+
+  for (const key of keys) {
+    if (marcados.has(key)) {
+      return true
+    }
+  }
+
+  return !!area.lido
 }
 
 function NotamSidebarComponent({
@@ -81,24 +119,26 @@ function NotamSidebarComponent({
     async function carregarEstados() {
       try {
         const estados = await getNotamReadStates()
-        if (!ativo) return
+
+        if (!ativo) {
+          return
+        }
 
         const next = new Set<string>()
 
-        for (const item of estados) {
-          if (item.lido) {
-            next.add(buildReadKeyFromState(item))
+        for (const item of estados as ReadStateApiItem[]) {
+          if (!item.lido) {
+            continue
+          }
+
+          const keys = buildReadKeysFromState(item)
+
+          for (const key of keys) {
+            next.add(key)
           }
         }
 
         setMarcados(next)
-
-        if (Array.isArray(notams)) {
-          for (const notam of notams) {
-            const key = buildReadKey(notam)
-            notam.lido = next.has(key)
-          }
-        }
       } catch (error) {
         console.error("Erro ao carregar estados de leitura dos NOTAMs", error)
       }
@@ -112,29 +152,35 @@ function NotamSidebarComponent({
   }, [notams])
 
   const toggleMarcado = async (notam: AreaNotamCsv) => {
-    const key = buildReadKey(notam)
+    const keys = buildReadKeys(notam)
+    const primaryKey = Array.from(keys)[0] ?? areaNotamKeySidebar(notam)
     const marcadoAtual = isMarcadoNotam(notam, marcados)
     const novoValor = !marcadoAtual
 
     setSalvando((current) => {
       const next = new Set(current)
-      next.add(key)
+      next.add(primaryKey)
       return next
     })
 
     setMarcados((current) => {
       const next = new Set(current)
-      if (novoValor) next.add(key)
-      else next.delete(key)
+
+      for (const key of keys) {
+        if (novoValor) {
+          next.add(key)
+        } else {
+          next.delete(key)
+        }
+      }
+
       return next
     })
-
-    notam.lido = novoValor
 
     try {
       await setNotamReadState({
         sourceId: notam.source_id,
-        numeroNotam: notam.numero_notam,
+        numeroNotam: notam.numero_notam || notam.nome || "",
         fir: notam.fir_match,
         lido: novoValor
       })
@@ -145,16 +191,21 @@ function NotamSidebarComponent({
 
       setMarcados((current) => {
         const next = new Set(current)
-        if (novoValor) next.delete(key)
-        else next.add(key)
+
+        for (const key of keys) {
+          if (marcadoAtual) {
+            next.add(key)
+          } else {
+            next.delete(key)
+          }
+        }
+
         return next
       })
-
-      notam.lido = marcadoAtual
     } finally {
       setSalvando((current) => {
         const next = new Set(current)
-        next.delete(key)
+        next.delete(primaryKey)
         return next
       })
     }
@@ -171,10 +222,17 @@ function NotamSidebarComponent({
       const tipoNormalizado = normalizarTexto(notam.area_type)
       const marcado = isMarcadoNotam(notam, marcados)
 
-      if (filtro === "VISTO" && !marcado) return false
-      if (filtro === "NAO_VISTO" && marcado) return false
+      if (filtro === "VISTO" && !marcado) {
+        return false
+      }
 
-      if (!textoBusca) return true
+      if (filtro === "NAO_VISTO" && marcado) {
+        return false
+      }
+
+      if (!textoBusca) {
+        return true
+      }
 
       return (
         idNormalizado.includes(textoBusca) ||
@@ -190,8 +248,11 @@ function NotamSidebarComponent({
     let naoVistos = 0
 
     for (const notam of listaBase) {
-      if (isMarcadoNotam(notam, marcados)) vistos += 1
-      else naoVistos += 1
+      if (isMarcadoNotam(notam, marcados)) {
+        vistos += 1
+      } else {
+        naoVistos += 1
+      }
     }
 
     return {
@@ -285,7 +346,8 @@ function NotamSidebarComponent({
               normalizarTexto(areaMapaSelecionada?.chave) === normalizarTexto(chaveNotam)
 
             const isMarcado = isMarcadoNotam(notam, marcados)
-            const isSaving = salvando.has(buildReadKey(notam))
+            const primaryKey = Array.from(buildReadKeys(notam))[0] ?? chaveNotam
+            const isSaving = salvando.has(primaryKey)
 
             return (
               <div
@@ -298,8 +360,8 @@ function NotamSidebarComponent({
                     type="checkbox"
                     checked={isMarcado}
                     disabled={isSaving}
-                    onChange={(e) => {
-                      e.stopPropagation()
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => {
                       void toggleMarcado(notam)
                     }}
                     className="notam-checkbox"
