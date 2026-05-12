@@ -22,6 +22,10 @@ import {
   type NavaidType,
   type Waypoint
 } from "../services/api"
+import {
+  getSpecialAreas,
+  type SpecialArea
+} from "../services/specialAreasApi"
 import type {
   Airport,
   AreaFixa,
@@ -100,6 +104,9 @@ const COR_AREA_DESTACADA = "#fde047"
 const COR_AEROVIA_HOVER = "#ffffff"
 const COR_FIR = "#ffffff"
 const COR_NOTAM_ALTO = "#f43f5e"
+const COR_EAC_D = "#a855f7"
+const COR_EAC_P = "#ef4444"
+const COR_EAC_R = "#f59e0b"
 
 function corNavaid(type: NavaidType): string {
   if (type === "DVOR") return COR_DVOR
@@ -159,6 +166,28 @@ function corAreaPorTipo(areaType: string): string {
   if (t === "PROHIBITED") return COR_AREA_PROHIBITED
   if (t === "DANGER") return COR_AREA_DANGER
   return COR_AREA_DEFAULT
+}
+
+function corAreaEspecial(type: string): string {
+  if (type === "D") return COR_EAC_D
+  if (type === "P") return COR_EAC_P
+  if (type === "R") return COR_EAC_R
+  return COR_AREA_DEFAULT
+}
+
+function specialAreaKey(area: SpecialArea) {
+  return `SPECIAL|${area.source}|${area.id}|${area.ident}`
+}
+
+function formatLimitEspecial(value: string, unit: string) {
+  const text = String(value || "").trim()
+  const unitText = String(unit || "").trim()
+
+  if (!text && !unitText) return "-"
+  if (!text) return unitText
+  if (!unitText) return text
+
+  return `${text} ${unitText}`
 }
 
 function parseAltitudeFeet(value?: string | null): number | null {
@@ -632,11 +661,46 @@ function estiloAreaBase({
   }
 }
 
+function renderSpecialArea(area: SpecialArea) {
+  const color = corAreaEspecial(area.type)
+
+  return (
+    <Polygon
+      key={specialAreaKey(area)}
+      positions={area.coords_latlon}
+      pathOptions={{
+        color,
+        weight: 1.8,
+        opacity: 0.9,
+        fillColor: color,
+        fillOpacity: area.type === "P" ? 0.18 : 0.14
+      }}
+    >
+      <Tooltip sticky>
+        {area.ident || area.name} | {area.typeLabel}
+      </Tooltip>
+
+      <Popup>
+        <div>
+          <div><strong>Ident:</strong> {area.ident || "-"}</div>
+          <div><strong>Nome:</strong> {area.name || "-"}</div>
+          <div><strong>Tipo:</strong> {area.typeLabel || "-"}</div>
+          <div><strong>Limite inferior:</strong> {formatLimitEspecial(area.lowerLimit, area.lowerUnit)}</div>
+          <div><strong>Limite superior:</strong> {formatLimitEspecial(area.upperLimit, area.upperUnit)}</div>
+          <div><strong>Efetiva desde:</strong> {area.effectived || "-"}</div>
+          <div><strong>Pontos:</strong> {area.coords_latlon.length}</div>
+        </div>
+      </Popup>
+    </Polygon>
+  )
+}
+
 export function MapView(props: Props) {
   const [aeroviaAltaHover, setAeroviaAltaHover] = useState<string | null>(null)
   const [aeroviaBaixaHover, setAeroviaBaixaHover] = useState<string | null>(null)
   const [aeroviaUruguayHover, setAeroviaUruguayHover] = useState<string | null>(null)
   const [firs, setFirs] = useState<FirArea[]>([])
+  const [specialAreas, setSpecialAreas] = useState<SpecialArea[]>([])
 
   useEffect(() => {
     let mounted = true
@@ -651,6 +715,26 @@ export function MapView(props: Props) {
         console.error("Erro ao carregar FIRs:", err)
         if (!mounted) return
         setFirs([])
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    getSpecialAreas()
+      .then((data) => {
+        if (!mounted) return
+        console.log("ÁREAS ESPECIAIS BACKEND:", data)
+        setSpecialAreas(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar áreas especiais:", err)
+        if (!mounted) return
+        setSpecialAreas([])
       })
 
     return () => {
@@ -718,6 +802,27 @@ export function MapView(props: Props) {
       }))
       .filter((area) => area.coords_latlon.length >= 3)
   }, [props.areasTemporarias])
+
+  const specialAreasNormalizadas = useMemo(() => {
+    return specialAreas
+      .map((area) => ({
+        ...area,
+        coords_latlon: normalizeRing(area.coords_latlon)
+      }))
+      .filter((area) => area.coords_latlon.length >= 3)
+  }, [specialAreas])
+
+  const areasPerigosas = useMemo(() => {
+    return specialAreasNormalizadas.filter((area) => area.type === "D")
+  }, [specialAreasNormalizadas])
+
+  const areasProibidas = useMemo(() => {
+    return specialAreasNormalizadas.filter((area) => area.type === "P")
+  }, [specialAreasNormalizadas])
+
+  const areasRestritas = useMemo(() => {
+    return specialAreasNormalizadas.filter((area) => area.type === "R")
+  }, [specialAreasNormalizadas])
 
   const rotasNormalizadas = useMemo(() => {
     return props.rotasAnalisadas
@@ -1063,6 +1168,30 @@ export function MapView(props: Props) {
             ))}
           </FeatureGroup>
         </LayersControl.Overlay>
+
+        {areasPerigosas.length > 0 && (
+          <LayersControl.Overlay checked={false} name={`Áreas perigosas (${areasPerigosas.length})`}>
+            <FeatureGroup>
+              {areasPerigosas.map(renderSpecialArea)}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
+        {areasProibidas.length > 0 && (
+          <LayersControl.Overlay checked={false} name={`Áreas proibidas (${areasProibidas.length})`}>
+            <FeatureGroup>
+              {areasProibidas.map(renderSpecialArea)}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
+
+        {areasRestritas.length > 0 && (
+          <LayersControl.Overlay checked={false} name={`Áreas restritas (${areasRestritas.length})`}>
+            <FeatureGroup>
+              {areasRestritas.map(renderSpecialArea)}
+            </FeatureGroup>
+          </LayersControl.Overlay>
+        )}
 
         <LayersControl.Overlay checked name="Aerovias altas">
           <FeatureGroup>
