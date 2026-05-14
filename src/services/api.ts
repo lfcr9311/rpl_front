@@ -321,6 +321,31 @@ function normalizeAeroporto(aeroporto: any): Airport {
 
 function normalizeRpl(rota: any): RotaAnalisada {
   const coords = normalizeLineCoords(rota?.coords_latlon)
+  const estimadosPayload = Array.isArray(rota?.estimados) ? rota.estimados : []
+
+  const estimados = estimadosPayload
+    .map((point: any) => {
+      const latitude = Number(point?.latitude)
+      const longitude = Number(point?.longitude)
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null
+      }
+
+      if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+        return null
+      }
+
+      return {
+        ident: String(point?.ident ?? "").trim().toUpperCase(),
+        latitude,
+        longitude,
+        distancia_acumulada_nm: Number(point?.distancia_acumulada_nm ?? 0),
+        tempo_acumulado_min: Number(point?.tempo_acumulado_min ?? 0),
+        estimado: String(point?.estimado ?? "").trim()
+      }
+    })
+    .filter(Boolean)
 
   return {
     ident: rota?.ident ?? "",
@@ -334,13 +359,14 @@ function normalizeRpl(rota: any): RotaAnalisada {
     rota_texto: rota?.rota_texto ?? "",
     linha_original: rota?.linha_original ?? "",
     coords_latlon: coords,
+    estimados,
     impactos_temporarias: [],
     impactos_fixas: [],
     impactada: false,
     impactada_fixa: false,
     impactada_temporaria: false,
     tipo_impacto: "NENHUM"
-  }
+  } as RotaAnalisada
 }
 
 function closeRing(coords: LatLon[]): LatLon[] {

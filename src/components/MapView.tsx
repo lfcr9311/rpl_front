@@ -7,6 +7,7 @@ import {
   Polyline,
   Circle,
   CircleMarker,
+  Marker,
   Popup,
   Tooltip,
   useMap,
@@ -240,6 +241,101 @@ function textoTipoImpacto(rota: RotaAnalisada): string {
   if (rota.tipo_impacto === "PERMANENTE") return "Permanente"
   if (rota.tipo_impacto === "TEMPORARIA") return "Temporária"
   return "Sem impacto"
+}
+
+function formatHhmm(value?: string | number | null): string {
+  const text = String(value ?? "").trim()
+
+  if (!text) return "-"
+
+  if (/^\d{4}$/.test(text)) {
+    return `${text.slice(0, 2)}:${text.slice(2, 4)}`
+  }
+
+  if (/^\d{3}$/.test(text)) {
+    const padded = text.padStart(4, "0")
+    return `${padded.slice(0, 2)}:${padded.slice(2, 4)}`
+  }
+
+  return text
+}
+
+function getRouteEstimatedPoints(rota: RotaAnalisada) {
+  const estimados = (rota as unknown as { estimados?: unknown }).estimados
+
+  if (!Array.isArray(estimados)) return []
+
+  return estimados
+    .map((point) => {
+      const item = point as Record<string, unknown>
+      const latitude = Number(item.latitude)
+      const longitude = Number(item.longitude)
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null
+      }
+
+      return {
+        ident: String(item.ident ?? "").trim().toUpperCase(),
+        latitude,
+        longitude,
+        distancia_acumulada_nm: Number(item.distancia_acumulada_nm ?? 0),
+        tempo_acumulado_min: Number(item.tempo_acumulado_min ?? 0),
+        estimado: String(item.estimado ?? "").trim()
+      }
+    })
+    .filter(Boolean) as Array<{
+      ident: string
+      latitude: number
+      longitude: number
+      distancia_acumulada_nm: number
+      tempo_acumulado_min: number
+      estimado: string
+    }>
+}
+
+
+function estimatedPointLabelIcon(pointIdent: string, estimado: string) {
+  const safeIdent = escapeHtml(pointIdent || "PONTO")
+  const safeEstimado = escapeHtml(estimado || "-")
+
+  return L.divIcon({
+    className: "estimated-point-label",
+    html: `
+      <div style="
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transform: translate(8px, -18px);
+        pointer-events: none;
+      ">
+        <div style="
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #fb923c;
+          border: 1px solid #ffffff;
+          box-shadow: 0 0 8px rgba(251,146,60,0.95);
+        "></div>
+        <div style="
+          background: rgba(15, 23, 42, 0.96);
+          color: #ffffff;
+          border: 1px solid rgba(255,255,255,0.45);
+          border-radius: 6px;
+          padding: 3px 6px;
+          font-size: 11px;
+          font-weight: 700;
+          line-height: 1.1;
+          white-space: nowrap;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+        ">
+          ${safeIdent} ${safeEstimado}
+        </div>
+      </div>
+    `,
+    iconSize: [1, 1],
+    iconAnchor: [0, 0]
+  })
 }
 
 function rotaKey(rota: RotaAnalisada) {
@@ -1440,7 +1536,9 @@ export function MapView(props: Props) {
             {rotasFiltradasPorImpacto.map((rota) => {
               const key = rotaKey(rota)
               const selecionada = rotaSelecionadaKeyAtual === key
+              const algumaRotaSelecionada = !!rotaSelecionadaKeyAtual
               const afetadaPelaArea = chavesRotasImpactadasPelaArea.has(key)
+              const estimados = getRouteEstimatedPoints(rota)
 
               let color = COR_ROTA_BASE
               let weight = 2
@@ -1448,12 +1546,16 @@ export function MapView(props: Props) {
 
               if (selecionada) {
                 color = COR_ROTA_SELECIONADA
-                weight = 4
+                weight = 5
                 opacity = 1
+              } else if (algumaRotaSelecionada) {
+                color = rota.impactada ? COR_ROTA_IMPACTADA : COR_ROTA_BASE
+                weight = 2
+                opacity = 0.12
               } else if (props.areaMapaSelecionada) {
                 color = afetadaPelaArea ? COR_ROTA_IMPACTADA : COR_ROTA_BASE
                 weight = afetadaPelaArea ? 3 : 2
-                opacity = 0.95
+                opacity = afetadaPelaArea ? 0.95 : 0.12
               } else if (rota.impactada) {
                 color = COR_ROTA_IMPACTADA
                 weight = 2
@@ -1465,27 +1567,36 @@ export function MapView(props: Props) {
               }
 
               return (
-                <Polyline
-                  key={key}
-                  positions={rota.coords_latlon}
-                  pathOptions={{ color, weight, opacity }}
-                  eventHandlers={{
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e)
-                      props.onSelecionarRota(rota)
-                    }
-                  }}
-                >
-                  <Popup>
-                    <div>
-                      <div><strong>Voo:</strong> {rota.ident || "-"}</div>
-                      <div><strong>Origem:</strong> {rota.origem || "-"}</div>
-                      <div><strong>Destino:</strong> {rota.destino || "-"}</div>
-                      <div><strong>Impacto:</strong> {textoTipoImpacto(rota)}</div>
-                    </div>
-                  </Popup>
-                  <Tooltip sticky>{rota.ident || `${rota.origem}-${rota.destino}`}</Tooltip>
-                </Polyline>
+                <FeatureGroup key={key}>
+                  <Polyline
+                    positions={rota.coords_latlon}
+                    pathOptions={{ color, weight, opacity }}
+                    eventHandlers={{
+                      click: (e) => {
+                        L.DomEvent.stopPropagation(e)
+                        props.onSelecionarRota(selecionada ? null : rota)
+                      }
+                    }}
+                  >
+                    <Tooltip sticky>
+                      {rota.ident || `${rota.origem}-${rota.destino}`} | {formatHhmm(rota.eobt)}
+                    </Tooltip>
+                  </Polyline>
+
+                  {selecionada && estimados.map((point, pointIndex) => {
+                    const ident = point.ident || `P${pointIndex + 1}`
+                    const estimado = formatHhmm(point.estimado)
+
+                    return (
+                      <Marker
+                        key={`${key}-estimado-label-${ident}-${pointIndex}-${estimado}`}
+                        position={[point.latitude, point.longitude]}
+                        icon={estimatedPointLabelIcon(ident, estimado)}
+                        interactive={false}
+                      />
+                    )
+                  })}
+                </FeatureGroup>
               )
             })}
           </FeatureGroup>
