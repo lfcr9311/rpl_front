@@ -6,7 +6,7 @@ import type {
   RotaAnalisada
 } from "../types"
 import type { ManualRouteResponse } from "../services/api"
-import { buildAreaLabel, formatarDuracaoMin, formatarHora } from "../services/api"
+import { buildAreaLabel, formatarHora } from "../services/api"
 
 type Props = {
   isOpen: boolean
@@ -183,21 +183,8 @@ function ManualRouteSection(props: Props) {
               </div>
 
               {props.manualRoute.estimativas?.length ? (
-                <div className="list-scroll">
-                  {props.manualRoute.estimativas.map((estimativa, index) => (
-                    <div className="route-list-item" key={`${estimativa.ident}-${index}`}>
-                      <div><strong>{estimativa.ident}</strong></div>
-                      <div>
-                        Horário: <strong>{formatarHora(estimativa.horario_zulu)}Z</strong>
-                        {estimativa.dias_adicionais > 0 ? ` (+${estimativa.dias_adicionais}d)` : ""}
-                      </div>
-                      <div>
-                        Voo decorrido: <strong>{formatarDuracaoMin(estimativa.tempo_decorrido_min)}</strong>
-                        {" · "}
-                        Distância: <strong>{estimativa.distancia_acumulada_nm} NM</strong>
-                      </div>
-                    </div>
-                  ))}
+                <div className="collapsed-summary-line">
+                  Horários estimados exibidos ao longo da rota no mapa.
                 </div>
               ) : null}
             </div>

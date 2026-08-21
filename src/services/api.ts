@@ -909,6 +909,8 @@ export type ManualRouteSegment = {
 
 export type ManualRouteEstimate = {
   ident: string
+  latitude: number
+  longitude: number
   distancia_acumulada_nm: number
   tempo_decorrido_min: number
   horario_zulu: string

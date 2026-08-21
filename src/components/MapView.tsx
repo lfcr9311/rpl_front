@@ -16,6 +16,7 @@ import {
 import L from "leaflet"
 import { useEffect, useMemo, useState } from "react"
 import {
+  formatarDuracaoMin,
   getFirs,
   type FirArea,
   type ManualRouteResponse,
@@ -1527,6 +1528,31 @@ export function MapView(props: Props) {
                     : ""}
                 </Tooltip>
               </Polyline>
+
+              {manualRouteNormalizada.estimativas?.map((point, pointIndex) => {
+                const ident = point.ident || `P${pointIndex + 1}`
+                const estimado = formatHhmm(point.horario_zulu)
+
+                return (
+                  <Marker
+                    key={`manual-estimado-${ident}-${pointIndex}`}
+                    position={[point.latitude, point.longitude]}
+                    icon={estimatedPointLabelIcon(ident, estimado)}
+                  >
+                    <Popup>
+                      <div>
+                        <div><strong>{ident}</strong></div>
+                        <div>
+                          Horário estimado: <strong>{estimado}Z</strong>
+                          {point.dias_adicionais > 0 ? ` (+${point.dias_adicionais}d)` : ""}
+                        </div>
+                        <div>Voo decorrido: <strong>{formatarDuracaoMin(point.tempo_decorrido_min)}</strong></div>
+                        <div>Distância acumulada: <strong>{point.distancia_acumulada_nm} NM</strong></div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )
+              })}
             </FeatureGroup>
           </LayersControl.Overlay>
         )}
