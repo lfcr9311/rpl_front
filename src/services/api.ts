@@ -856,6 +856,13 @@ export function formatarHora(value?: string | null): string {
   return `${v.slice(0, 2)}:${v.slice(2, 4)}`
 }
 
+export function formatarDuracaoMin(minutos: number): string {
+  if (!Number.isFinite(minutos) || minutos < 0) return "-"
+  const hh = Math.floor(minutos / 60)
+  const mm = Math.round(minutos % 60)
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`
+}
+
 export function buildAreaLabel(area: AreaTemporaria): string {
   return `${area.nome} (${area.coords_latlon.length} pts)`
 }
@@ -900,6 +907,14 @@ export type ManualRouteSegment = {
   coords_latlon: LatLon[]
 }
 
+export type ManualRouteEstimate = {
+  ident: string
+  distancia_acumulada_nm: number
+  tempo_decorrido_min: number
+  horario_zulu: string
+  dias_adicionais: number
+}
+
 export type ManualRouteResponse = {
   origem: string
   destino: string
@@ -908,12 +923,15 @@ export type ManualRouteResponse = {
   pontos_resolvidos: string[]
   segmentos: ManualRouteSegment[]
   distancia_total_nm: number
+  estimativas?: ManualRouteEstimate[]
 }
 
 export async function postManualRoute(payload: {
   origem: string
   destino: string
   rota: string
+  horario_decolagem?: string
+  velocidade_media_kt?: number
 }): Promise<ManualRouteResponse> {
   return request<ManualRouteResponse>("/api/notams/manual-route", {
     method: "POST",

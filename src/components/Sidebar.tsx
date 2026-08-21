@@ -6,7 +6,7 @@ import type {
   RotaAnalisada
 } from "../types"
 import type { ManualRouteResponse } from "../services/api"
-import { buildAreaLabel, formatarHora } from "../services/api"
+import { buildAreaLabel, formatarDuracaoMin, formatarHora } from "../services/api"
 
 type Props = {
   isOpen: boolean
@@ -41,6 +41,8 @@ type Props = {
     origem: string
     destino: string
     rota: string
+    horario_decolagem?: string
+    velocidade_media_kt?: number
   }) => void
   onLimparRotaManual: () => void
 }
@@ -73,12 +75,19 @@ function ManualRouteSection(props: Props) {
   const [origem, setOrigem] = useState("SBGR")
   const [destino, setDestino] = useState("SBRF")
   const [rota, setRota] = useState("NIBRU UZ171 KEVUN")
+  const [horarioDecolagem, setHorarioDecolagem] = useState("")
+  const [velocidadeMedia, setVelocidadeMedia] = useState("")
 
   function submit() {
+    const horario = horarioDecolagem.trim()
+    const velocidade = velocidadeMedia.trim()
+
     props.onGerarRotaManual({
       origem: origem.trim().toUpperCase(),
       destino: destino.trim().toUpperCase(),
-      rota: rota.trim().toUpperCase()
+      rota: rota.trim().toUpperCase(),
+      horario_decolagem: horario || undefined,
+      velocidade_media_kt: velocidade ? Number(velocidade) : undefined
     })
   }
 
@@ -119,6 +128,24 @@ function ManualRouteSection(props: Props) {
             placeholder="NIBRU UZ171 KEVUN"
           />
 
+          <label className="label">Horário de decolagem (Zulu, HHMM)</label>
+          <input
+            className="input"
+            value={horarioDecolagem}
+            onChange={(e) => setHorarioDecolagem(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            placeholder="1830"
+            inputMode="numeric"
+          />
+
+          <label className="label">Velocidade média prevista (kt)</label>
+          <input
+            className="input"
+            value={velocidadeMedia}
+            onChange={(e) => setVelocidadeMedia(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="420"
+            inputMode="decimal"
+          />
+
           <div className="button-group">
             <button
               type="button"
@@ -154,6 +181,25 @@ function ManualRouteSection(props: Props) {
               <div className="collapsed-summary-line">
                 Resolvido: <strong>{props.manualRoute.pontos_resolvidos.join(" → ")}</strong>
               </div>
+
+              {props.manualRoute.estimativas?.length ? (
+                <div className="list-scroll">
+                  {props.manualRoute.estimativas.map((estimativa, index) => (
+                    <div className="route-list-item" key={`${estimativa.ident}-${index}`}>
+                      <div><strong>{estimativa.ident}</strong></div>
+                      <div>
+                        Horário: <strong>{formatarHora(estimativa.horario_zulu)}Z</strong>
+                        {estimativa.dias_adicionais > 0 ? ` (+${estimativa.dias_adicionais}d)` : ""}
+                      </div>
+                      <div>
+                        Voo decorrido: <strong>{formatarDuracaoMin(estimativa.tempo_decorrido_min)}</strong>
+                        {" · "}
+                        Distância: <strong>{estimativa.distancia_acumulada_nm} NM</strong>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </>

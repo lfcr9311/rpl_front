@@ -176,6 +176,8 @@ export default function App() {
     origem: string
     destino: string
     rota: string
+    horario_decolagem?: string
+    velocidade_media_kt?: number
   }) => {
     try {
       setManualRouteLoading(true)
